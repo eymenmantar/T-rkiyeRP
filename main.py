@@ -1,10 +1,12 @@
+import os
+import time
+import requests
+from threading import Thread
 import discord
 from discord.ext import commands
 from flask import Flask
-from threading import Thread
-import os
 
-# 1. Mini Web Sunucusu (Render'ın uyutmamasını sağlamak için)
+# 1. Mini Web Sunucusu ve Render Uykusuzluk Döngüsü (Keep-Alive)
 app = Flask('')
 
 @app.route('/')
@@ -16,8 +18,20 @@ def run():
 
 def keep_alive():
     t = Thread(target=run)
+    t.daemon = True
     t.start()
 
+# Kendi kendine her 4 dakikada (240 saniye) bir ping atarak uykuyu önler
+def self_ping():
+    while True:
+        try:
+            # Render'daki kendi web adresin
+            requests.get("https://t-rkiyerp.onrender.com")
+        except:
+            pass
+        time.sleep(240)
+
+# Bot ve Intent Ayarları
 intents = discord.Intents.default()
 intents.members = True # Üyeleri ve rolleri yönetebilmek için şart
 intents.message_content = True
@@ -181,72 +195,14 @@ async def ticketkur(ctx):
     )
     await ctx.send(embed=embed, view=view)
 
-# Web sunucusunu başlatıp botu güvenli token ile çalıştırıyoruz
-keep_alive()
-bot.run(os.environ.get("DISCORD_TOKEN"))    
+if __name__ == "__main__":
+    # Web sunucusunu başlat
+    keep_alive()
+    
+    # Kendini uyandırma döngüsünü arka planda başlat
+    ping_thread = Thread(target=self_ping)
+    ping_thread.daemon = True
+    ping_thread.start()
 
- 
-import discord
-from discord.ext import commands
-from discord.ui import View, Button
-
-# Zaten var olan bot ve intents ayarlarının altına ekleyebilirsin
-
-class TicketButton(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🎫 Destek Talebi Aç", style=discord.ButtonStyle.green, custom_id="ticket_button")
-    async def create_ticket(self, interaction: discord.Interaction, button: Button):
-        guild = interaction.guild
-        category = discord.utils.get(guild.categories, name="DESTEK TALEPLERİ")
-        
-        # Eğer "DESTEK TALEPLERİ" adında bir kategori yoksa otomatik oluşturalım
-        if not category:
-            category = await guild.create_category("DESTEK TALEPLERİ")
-
-        # Kullanıcı için özel kanal ismi oluşturalım (örn: ticket-pehlivan)
-        channel_name = f"ticket-{interaction.user.name}"
-        
-        # Kullanıcının zaten açık bir ticket kanalı var mı kontrol edelim
-        existing_channel = discord.utils.get(category.channels, name=channel_name)
-        if existing_channel:
-            await interaction.response.send_message(f"Zaten açık bir destek talebin var: {existing_channel.mention}", ephemeral=True)
-            return
-
-        # Kanala sadece yetkililerin ve ticket'ı açan kişinin erişebilmesi için izinler
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        }
-
-        # Kanalı oluşturalım
-        ticket_channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
-
-        await interaction.response.send_message(f"Destek talebin oluşturuldu: {ticket_channel.mention}", ephemeral=True)
-        
-        # Açılan kanalın içine hoş geldin mesajı ve kapatma butonu atalım
-        close_view = View()
-        close_button = Button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
-        
-        async def close_callback(inter: discord.Interaction):
-            await inter.response.send_message("Destek talebi kapatılıyor...", ephemeral=True)
-            await ticket_channel.delete()
-
-        close_button.callback = close_callback
-        close_view.add_item(close_button)
-
-        await ticket_channel.send(f"Hoş geldin {interaction.user.mention}! Yetkililer birazdan seninle ilgilenecektir.\nTalebi kapatmak için aşağıdaki butona basabilirsin.", view=close_view)
-
-# Ticket menüsünü gönderecek komut (!ticketkur)
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def ticketkur(ctx):
-    view = TicketButton()
-    embed = discord.Embed(
-        title="🎫 Destek Sistemi",
-        description="Sunucumuzda destek talebi oluşturmak için aşağıdaki **Destek Talebi Aç** butonuna tıklaman yeterlidir.",
-        color=discord.Color.blue()
-    )
-    await ctx.send(embed=embed, view=view)
+    # Botu çalıştır
+    bot.run(os.environ.get("DISCORD_TOKEN"))
