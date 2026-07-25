@@ -50,7 +50,7 @@ MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı 
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
 # Yetkililerin mesai açabileceği izinli ses ve metin kanallarının tam isimleri
-IZINLI_KANALLAR = [
+IZINLI_KANALLARI = [
     "🟢Aktif Yetkili 1", 
     "🟢Aktif Yetkili 2", 
     "🟢Aktif Yetkili 3", 
@@ -191,15 +191,20 @@ class MesaiPersistentView(discord.ui.View):
 
     @discord.ui.button(label="🟢 Mesai Oluştur", style=discord.ButtonStyle.green, custom_id="mesai_olustur_btn")
     async def mesai_olustur(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Yetkilinin bulunduğu kanalı kontrol et (Ses kanalı veya belirttiğin özel metin kanalı)
-        bulundugu_kanal = interaction.user.voice.channel if interaction.user.voice else interaction.channel
-        
+        # 1. Önce hatayı engellemek için botun yanıtını hızlıca erteleyelim (ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+
+        # 2. Yetkilinin bulunduğu kanalı güvenli bir şekilde kontrol edelim
+        bulundugu_kanal = None
+        if interaction.user.voice and interaction.user.voice.channel:
+            bulundugu_kanal = interaction.user.voice.channel
+        else:
+            bulundugu_kanal = interaction.channel
+
         if not bulundugu_kanal or bulundugu_kanal.name not in IZINLI_KANALLARI:
-            await interaction.response.send_message("❌ Mesai açılamıyor lütfen mesainizi açabileceğiniz ses kanallarına gidin.", ephemeral=True)
+            await interaction.followup.send("❌ Mesai açılamıyor lütfen mesainizi açabileceğiniz ses kanallarına gidin.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
-        
         if interaction.user.id in aktif_mesailer:
             await interaction.followup.send("❌ Zaten açık bir mesai kanalınız bulunuyor!", ephemeral=True)
             return
@@ -240,11 +245,11 @@ class MesaiPersistentView(discord.ui.View):
 
     @discord.ui.button(label="🔴 Mesai Kapat", style=discord.ButtonStyle.red, custom_id="mesai_kapat_btn")
     async def mesai_kapat(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
         if interaction.user.id not in aktif_mesailer:
-            await interaction.response.send_message("❌ Şu anda açık bir mesainiz bulunmuyor!", ephemeral=True)
+            await interaction.followup.send("❌ Şu anda açık bir mesainiz bulunmuyor!", ephemeral=True)
             return
             
-        await interaction.response.defer(ephemeral=True)
         await mesaiyi_bitir_ve_onaya_gonder(interaction.user.id, interaction.guild, sebep="buton")
         await interaction.followup.send("Kapatma talebiniz üst yönetime iletildi.", ephemeral=True)
 
