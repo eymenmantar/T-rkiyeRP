@@ -51,8 +51,8 @@ TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
 MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
-# 📸 ÖRNEK FOTOĞRAF LİNKİ (Buraya örnek kanıt fotoğrafının Discord veya hızlı resim linkini yapıştır)
-ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a663828&is=6a64e6a8&hm=9618b5f190cb6209e569cafe29898db4337aef77fd5eb39651f58fd6549fd1c3&"
+# 📸 ÖRNEK FOTOĞRAF LİNKİ (Örnek kanıt fotoğrafının linkini buraya yapıştırabilirsin)
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a663828&is=6a64e6a8&hm=9618b5f190cb6209e569cafe29898db4337aef77fd5eb39651f58fd6549fd1c3&" 
 
 # Yetkililerin mesai açabileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
@@ -245,9 +245,9 @@ class MesaiPersistentView(discord.ui.View):
         embed.description = (
             f"Hoş geldin {interaction.user.mention}!\n\n"
             "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya **oyun ekranını gösteren geçerli bir fotoğraf** yüklemelisin.\n"
-            "📸 Fotoğrafı attığın an sistem kontrol edecek, doğruysa `Mesainiz onaylanmıştır` diyecek ve süren işlemeye başlayacaktır.\n"
+            "📸 Discord arayüz ekran görüntüleri kesinlikle kabul edilmez!\n"
             "⏳ Her **30 dakikada bir** yeni kanıt fotoğrafı atmalısın.\n\n"
-            "👇 **ÖRNEK KANIT FOTOĞRAFI AŞAĞIDADIR:** Lütfen buna benzer tam ekran oyun görüntüsü atın."
+            "👇 **ÖRNEK KANIT FOTOĞRAFI AŞAĞIDADIR:**"
         )
         embed.set_image(url=ORNEK_FOTOGRAF_URL)
         await mesai_channel.send(content=interaction.user.mention, embed=embed)
@@ -358,14 +358,27 @@ async def on_message(message):
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 try:
                     image_bytes = await attachment.read()
-                    img = Image.open(io.BytesIO(image_bytes))
+                    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
                     
+                    # 1. Boyut kontrolü (Yatay ve yeterince büyük mü?)
                     if img.width < 800 or img.width <= img.height:
-                        await message.channel.send(f"❌ {message.author.mention} **Geçersiz Fotoğraf!**\nAttığınız fotoğraf oyun ekranına benzemiyor (Dikey çekim veya çok küçük boyutlu). Lütfen tam ekran yatay bir oyun görüntüsü atın!")
+                        await message.channel.send(f"❌ {message.author.mention} **Geçersiz Fotoğraf!** Lütfen tam ekran yatay bir oyun görüntüsü atın.")
+                        return
+
+                    # 2. Renk ve Discord Arayüzü Filtresi (Gri/Koyu Discord tonlarını engeller)
+                    small_img = img.resize((50, 50))
+                    colors = small_img.getcolors(50 * 50)
+                    colors.sort(key=lambda x: x[0], reverse=True)
+                    
+                    dominant_color = colors[0][1]
+                    r, g, b = dominant_color
+                    
+                    if abs(r - g) < 15 and abs(g - b) < 15 and r < 70:
+                        await message.channel.send(f"❌ {message.author.mention} **Geçersiz Kanıt!** Discord arayüzünün ekran görüntüsünü atamazsınız. Lütfen oyun içi görüntünüzü atın.")
                         return
                         
                 except Exception as e:
-                    await message.channel.send("⚠️ Fotoğraf okunurken bir hata oluştu, lütfen farklı bir fotoğraf atın.")
+                    await message.channel.send("⚠️ Fotoğraf analiz edilirken bir hata oluştu, lütfen tekrar deneyin.")
                     return
 
                 if mesai["durum"] == "bekliyor":
