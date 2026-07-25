@@ -85,7 +85,7 @@ async def on_member_join(member):
     else:
         print("Sunucuda 'Vatandaş' adında bir rol bulunamadı!")
 
-# Klasik Top 10 Komutu (!puanlar)
+# Klasik Top 10 Komutu (!puanlar) - Düz Liste Görünümü
 @bot.command(name="puanlar")
 async def puanlar(ctx):
     if not os.path.exists(DB_FILE):
@@ -106,22 +106,20 @@ async def puanlar(ctx):
 
     embed = discord.Embed(
         title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)",
-        description="Sunucumuzda destek talepleriyle ilgilenerek en çok puan toplayan yetkililer aşağıdadır:",
         color=discord.Color.gold()
     )
 
     medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-
+    
+    liste_metni = ""
     for index, (user_id, puan) in enumerate(sirali_liste):
         user = ctx.guild.get_member(int(user_id))
         user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
         emoji = medal_emojis[index] if index < 10 else f"{index+1}."
         
-        embed.add_field(
-            name=f"{emoji} Sıra",
-            value=f"👤 Yetkili: {user_name}\n⭐ Puan: **{puan}**",
-            inline=False
-        )
+        liste_metni += f"{emoji} {user_name} — **{puan} Puan**\n"
+
+    embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
 
     await ctx.send(embed=embed)
 
