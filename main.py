@@ -40,13 +40,14 @@ intents = discord.Intents.default()
 intents.members = True 
 intents.message_content = True
 intents.presences = True
-intents.voice_states = True # Ses kanalı takibi için gerekli
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 📌 KANAL ID AYARLARI (BURALARI KENDİ SUNUCUNA GÖRE DOLDUR)
-TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket puanlamalarının gideceği log kanalı
-MESAI_YONETIM_KANAL_ID = 1530537310649716796 # Mesai onaylarının gideceği Üst Yönetim kanalı
+# 📌 KANAL ID AYARLARI (KENDİ SUNUCUNA GÖRE DOLDUR)
+TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
+MESAI_KURULUM_KANAL_ID = 1530432112077963274  # !mesaikur komutunun atılacağı (herkesin görebileceği) kanal
+MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği (Sadece Üst Yönetimin görebileceği) gizli kanal
 
 # Veritabanı Dosyaları
 DB_TICKET = "puanlar.json"
@@ -83,7 +84,7 @@ def mesai_sure_ekle(user_id, eklenecek_saniye):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 # ==========================================
-# 4. MESAİ SİSTEMİ (YENİ EKLENEN KISIM)
+# 4. MESAİ SİSTEMİ
 # ==========================================
 
 async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
@@ -91,7 +92,6 @@ async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
     if not mesai:
         return
 
-    # Eğer mesai aktifse, son çalıştığı süreyi toplama ekle
     if mesai["durum"] == "aktif":
         mesai["toplam_saniye"] += time.time() - mesai["aktif_baslangic"]
 
@@ -103,12 +103,10 @@ async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
     kanal = guild.get_channel(mesai["kanal_id"])
     kullanici = guild.get_member(user_id)
 
-    # Oyuncuya bilgi ver
     if kanal:
         sebep_metni = "Sesten çıktığınız için" if sebep == "sesten_cikti" else "Butona bastığınız için"
         await kanal.send(f"🔒 {sebep_metni} mesai kapatma işlemi başlatıldı.\nGeçerli Mesai Süresi: **{sure_metni}**\nÜst yönetime onay mesajı gönderildi, lütfen kanalın silinmesini bekleyin.")
 
-    # Yönetim log kanalına gönder
     yonetim_kanal = guild.get_channel(MESAI_YONETIM_KANAL_ID)
     if yonetim_kanal and kullanici:
         embed = discord.Embed(title="⏱️ Mesai Onay Talebi", color=discord.Color.orange(), timestamp=discord.utils.utcnow())
@@ -126,14 +124,21 @@ class MesaiOnayView(discord.ui.View):
         self.toplam_saniye = toplam_saniye
         self.kanal_id = kanal_id
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # Sadece "Üst Yönetim" rolüne sahip olanlar butonları kullanabilir
+        rol = discord.utils.get(interaction.guild.roles, name="Üst Yönetim")
+        if not rol or rol not in interaction.user.roles:
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ Bu işlemi sadece **Üst Yönetim** yapabilir!", ephemeral=True)
+                return False
+        return True
+
     @discord.ui.button(label="✅ Kabul Et ve Kaydet", style=discord.ButtonStyle.green, custom_id="mesai_kabul")
     async def kabul_et(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         
-        # Süreyi veritabanına ekle
         mesai_sure_ekle(self.user_id, self.toplam_saniye)
         
-        # Butonları devre dışı bırak
         for child in self.children:
             child.disabled = True
         
@@ -144,7 +149,6 @@ class MesaiOnayView(discord.ui.View):
         
         await interaction.message.edit(embed=embed, view=self)
 
-        # Mesai kanalını sil
         kanal = interaction.guild.get_channel(self.kanal_id)
         if kanal:
             try:
@@ -166,7 +170,6 @@ class MesaiOnayView(discord.ui.View):
         
         await interaction.message.edit(embed=embed, view=self)
 
-        # Mesai kanalını sil
         kanal = interaction.guild.get_channel(self.kanal_id)
         if kanal:
             try:
@@ -201,10 +204,9 @@ class MesaiPersistentView(discord.ui.View):
 
         mesai_channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
         
-        # Sistemi hafızaya kaydet (Başlangıçta bekliyor durumunda)
         aktif_mesailer[interaction.user.id] = {
             "kanal_id": mesai_channel.id,
-            "durum": "bekliyor", # bekliyor, aktif, duraklatildi
+            "durum": "bekliyor",
             "aktif_baslangic": 0.0,
             "toplam_saniye": 0.0,
             "son_foto_zamani": time.time()
@@ -233,6 +235,7 @@ class MesaiPersistentView(discord.ui.View):
 
 @bot.command(name="mesaikur")
 async def mesaikur(ctx):
+    # Sadece komutun atılması gereken kanalda çalışmasını istersen buraya kontrol eklenebilir
     view = MesaiPersistentView()
     embed = discord.Embed(
         title="⏱️ Yetkili Mesai Sistemi",
@@ -280,19 +283,17 @@ async def mesailer(ctx):
     embed.description = liste_metni if liste_metni else "Henüz kimse mesai yapmamış."
     await ctx.send(embed=embed)
 
-# 30 Dakikalık Kontrol Döngüsü
 @tasks.loop(minutes=1)
 async def mesai_kontrol_dongusu():
     su_an = time.time()
     for user_id, mesai in list(aktif_mesailer.items()):
         if mesai["durum"] == "aktif":
             gecen_sure = su_an - mesai["son_foto_zamani"]
-            if gecen_sure >= 1800:  # 1800 saniye = 30 dakika
+            if gecen_sure >= 1800:
                 mesai["durum"] = "duraklatildi"
                 mesai["toplam_saniye"] += (su_an - mesai["aktif_baslangic"])
                 
-                # Uyarı yolla
-                guild = bot.guilds[0] # Basitlik için ilk sunucuyu alıyoruz
+                guild = bot.guilds[0]
                 kanal = guild.get_channel(mesai["kanal_id"])
                 if kanal:
                     await kanal.send(f"⚠️ <@{user_id}> **30 dakikadır fotoğraf yüklemediğiniz için mesainiz DURAKLATILDI!**\nSüre sayımının devam etmesi için yeni bir kanıt fotoğrafı yüklemelisiniz.")
@@ -304,7 +305,7 @@ async def mesai_kontrol_dongusu():
 async def on_ready():
     bot.add_view(TicketPersistentView())
     bot.add_view(MesaiPersistentView())
-    mesai_kontrol_dongusu.start() # Döngüyü başlat
+    mesai_kontrol_dongusu.start()
     print(f"Gözlerimi açtım! {bot.user.name} olarak çevrimiçiyim.")
 
 @bot.event
@@ -321,11 +322,9 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Eğer oyuncunun aktif bir mesaisi varsa ve fotoğraf atmışsa
     if message.author.id in aktif_mesailer:
         mesai = aktif_mesailer[message.author.id]
         if message.channel.id == mesai["kanal_id"] and message.attachments:
-            # Fotoğrafı algıladı
             if mesai["durum"] == "bekliyor":
                 mesai["durum"] = "aktif"
                 mesai["aktif_baslangic"] = time.time()
@@ -338,20 +337,18 @@ async def on_message(message):
                 mesai["durum"] = "aktif"
                 mesai["aktif_baslangic"] = time.time()
                 mesai["son_foto_zamani"] = time.time()
-                await message.channel.send("▶️ **Fotoğraf doğrulandı, mesainiz kaldığı yerden tekrar başladı!** (Duraklatılan süre hesaplamaya dahil edilmedi.)")
+                await message.channel.send("▶️ **Fotoğraf doğrulandı, mesainiz kaldığı yerden tekrar başladı!**")
 
-    # Komutların çalışması için bunu eklemek zorundayız
     await bot.process_commands(message)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Eğer bir kullanıcı ses kanalından tamamen çıkarsa
     if before.channel is not None and after.channel is None:
         if member.id in aktif_mesailer:
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
-# 6. TICKET SİSTEMİ (ÖNCEKİ YAZDIĞIMIZ KODLAR)
+# 6. TICKET SİSTEMİ
 # ==========================================
 
 class TicketPersistentView(discord.ui.View):
