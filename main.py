@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import urllib.request
 from threading import Thread
@@ -40,6 +41,24 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # 📌 BURAYA DISCORD'DA AÇTIĞIN LOG KANALININ ID'SİNİ YAPIŞTIR
 LOG_KANAL_ID = 1530494818130591836 
 
+# Puan Veritabanı Yönetimi
+DB_FILE = "puanlar.json"
+
+def puan_ekle(user_id, miktar=1):
+    data = {}
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            data = {}
+    
+    user_id_str = str(user_id)
+    data[user_id_str] = data.get(user_id_str, 0) + miktar
+    
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
 # Kalıcı Buton Görünümü
 class TicketPersistentView(discord.ui.View):
     def __init__(self):
@@ -52,6 +71,11 @@ class TicketPersistentView(discord.ui.View):
 @bot.event
 async def on_ready():
     bot.add_view(TicketPersistentView())
+    try:
+        await bot.tree.sync() # Slash komutlarını Discord'a kaydeder
+        print("Slash komutları senkronize edildi.")
+    except Exception as e:
+        print(f"Senkronizasyon hatası: {e}")
     print(f"Gözlerimi açtım! {bot.user.name} olarak sunucuda çevrimiçiyim.")
 
 @bot.event
@@ -65,6 +89,47 @@ async def on_member_join(member):
             print(f"Rol verilirken hata oluştu: {e}")
     else:
         print("Sunucuda 'Vatandaş' adında bir rol bulunamadı!")
+
+# Puanlı Top 10 Sıralama Slash Komutu
+@bot.tree.command(name="puan-sıralama", description="En çok puan toplayan ilk 10 yetkiliyi gösterir.")
+async def puan_siralama(interaction: discord.Interaction):
+    if not os.path.exists(DB_FILE):
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
+        return
+
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except:
+        data = {}
+
+    if not data:
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
+        return
+
+    # Puanlara göre büyükten küçüğe sıralama
+    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    embed = discord.Embed(
+        title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)",
+        description="Sunucumuzda destek talepleriyle ilgilenerek en çok puan toplayan yetkililer aşağıdadır:",
+        color=discord.Color.gold()
+    )
+
+    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+    for index, (user_id, puan) in enumerate(sirali_liste):
+        user = interaction.guild.get_member(int(user_id))
+        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
+        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
+        
+        embed.add_field(
+            name=f"{emoji} Sıra",
+            value=f"👤 Yetkili: {user_name}\n⭐ Puan: **{puan}**",
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed)
 
 # Puanlama Sonrası Kapatma Butonu
 class FinalCloseView(discord.ui.View):
@@ -80,7 +145,7 @@ class FinalCloseView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-# Zaman Aşımı Paneli (Hem Yeniden Aç hem Kapat Butonu Birlikte)
+# Zaman Aşımı Paneli
 class TicketTimeoutAgainView(discord.ui.View):
     def __init__(self, ticket_channel, opener):
         super().__init__(timeout=None)
@@ -123,7 +188,7 @@ class TicketTimeoutAgainView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-# Puanlama Modal Menüsü (Log Gönderme ve Kanalı Kapatmama Kısmı)
+# Puanlama Modal Menüsü
 class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
     feedback = discord.ui.TextInput(
         label="Görüş ve Önerilerin (İsteğe Bağlı)",
@@ -146,6 +211,10 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
         await interaction.followup.send("⭐ Puanladığınız için teşekkür ederiz!", ephemeral=True)
         await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** destek talebini **{self.score} Yıldız** ile puanladı. Puanladığınız için teşekkür ederiz!")
         
+        # Eğer bir yetkili claim alıp ilgilendiyse otomatik puan ekle
+        if self.claimed_by:
+            puan_ekle(self.claimed_by.id, 1)
+
         log_channel = interaction.guild.get_channel(LOG_KANAL_ID)
         if log_channel:
             embed = discord.Embed(title="⭐ Destek Talebi Puanlandı", color=discord.Color.green(), timestamp=discord.utils.utcnow())
@@ -291,7 +360,6 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
         if not category:
             category = await guild.create_category("DESTEK TALEPLERİ")
 
-        # KONTROL: Kullanıcının zaten açık bir ticket'ı var mı?
         channel_name = f"ticket-{interaction.user.name.lower()}"
         existing_channel = discord.utils.get(category.channels, name=channel_name)
         
