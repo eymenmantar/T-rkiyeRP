@@ -291,11 +291,12 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
         if not category:
             category = await guild.create_category("DESTEK TALEPLERİ")
 
+        # KONTROL: Kullanıcının zaten açık bir ticket'ı var mı?
         channel_name = f"ticket-{interaction.user.name.lower()}"
-        
         existing_channel = discord.utils.get(category.channels, name=channel_name)
+        
         if existing_channel:
-            await interaction.followup.send(f"Zaten açık bir destek talebin var: {existing_channel.mention}", ephemeral=True)
+            await interaction.followup.send("❌ Sadece 1 ticket açabilirsiniz! Zaten açık olan bir destek talebiniz bulunuyor.", ephemeral=True)
             return
 
         overwrites = {
@@ -315,7 +316,6 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
 
         view = TicketControlView(ticket_channel, interaction.user)
         
-        # TRRP rolünü buraya, yani ticket ilk açıldığında gönderilen mesaja ekledik
         trrp_role = discord.utils.get(guild.roles, name="TRRP")
         ping_text = trrp_role.mention if trrp_role else "@TRRP"
 
