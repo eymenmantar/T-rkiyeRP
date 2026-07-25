@@ -172,24 +172,18 @@ class TicketControlView(discord.ui.View):
             await interaction.response.send_message(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
             return
 
-        # Discord'a hemen zamanında yanıt vererek hata oluşmasını engelliyoruz
-        await interaction.response.defer(ephemeral=True)
-
-        self.claimed_by = interaction.user
+        # Zaman aşımı hatasını tamamen engellemek için doğrudan mesajı güncelliyoruz
         button.disabled = True
         button.label = f"Claimleyen: {interaction.user.display_name}"
         button.style = discord.ButtonStyle.gray
+        self.claimed_by = interaction.user
 
-        # Mesajı güvenli bir şekilde güncelliyoruz
-        try:
-            await interaction.message.edit(view=self)
-        except:
-            pass
+        await interaction.response.edit_message(view=self)
 
         trrp_role = discord.utils.get(interaction.guild.roles, name="TRRP")
         ping_text = trrp_role.mention if trrp_role else "@TRRP"
 
-        await interaction.followup.send(f"🔒 Bu destek talebi **{interaction.user.mention}** tarafından devralındı! {ping_text}", ephemeral=False)
+        await interaction.channel.send(f"🔒 Bu destek talebi **{interaction.user.mention}** tarafından devralındı! {ping_text}")
 
     @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
     async def status_processing(self, interaction: discord.Interaction, button: discord.ui.Button):
