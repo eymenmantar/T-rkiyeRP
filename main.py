@@ -1,13 +1,16 @@
 import os
 import json
 import time
+import asyncio
 import urllib.request
 from threading import Thread
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from flask import Flask
 
-# 1. Mini Web Sunucusu ve Render Uykusuzluk Döngüsü (Keep-Alive)
+# ==========================================
+# 1. WEB SUNUCUSU (7/24 AKTİF TUTMA)
+# ==========================================
 app = Flask('')
 
 @app.route('/')
@@ -30,36 +33,327 @@ def self_ping():
             pass
         time.sleep(240)
 
-# Bot ve Intent Ayarları
+# ==========================================
+# 2. BOT AYARLARI VE INTENTLER
+# ==========================================
 intents = discord.Intents.default()
 intents.members = True 
 intents.message_content = True
 intents.presences = True
+intents.voice_states = True # Ses kanalı takibi için gerekli
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 📌 BURAYA DISCORD'DA AÇTIĞIN LOG KANALININ ID'SİNİ YAPIŞTIR
-LOG_KANAL_ID = 1530494818130591836 
+# 📌 KANAL ID AYARLARI (BURALARI KENDİ SUNUCUNA GÖRE DOLDUR)
+TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket puanlamalarının gideceği log kanalı
+MESAI_YONETIM_KANAL_ID = 1530537310649716796 # Mesai onaylarının gideceği Üst Yönetim kanalı
 
-# Puan Veritabanı Yönetimi
-DB_FILE = "puanlar.json"
+# Veritabanı Dosyaları
+DB_TICKET = "puanlar.json"
+DB_MESAI = "mesai_sureleri.json"
 
+# Hafızadaki Aktif Mesailer Sözlüğü
+aktif_mesailer = {}
+
+# ==========================================
+# 3. VERİTABANI İŞLEMLERİ
+# ==========================================
 def puan_ekle(user_id, miktar=1):
     data = {}
-    if os.path.exists(DB_FILE):
+    if os.path.exists(DB_TICKET):
         try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
+            with open(DB_TICKET, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except:
-            data = {}
-    
-    user_id_str = str(user_id)
-    data[user_id_str] = data.get(user_id_str, 0) + miktar
-    
-    with open(DB_FILE, "w", encoding="utf-8") as f:
+            pass
+    data[str(user_id)] = data.get(str(user_id), 0) + miktar
+    with open(DB_TICKET, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# Kalıcı Buton Görünümü
+def mesai_sure_ekle(user_id, eklenecek_saniye):
+    data = {}
+    if os.path.exists(DB_MESAI):
+        try:
+            with open(DB_MESAI, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            pass
+    data[str(user_id)] = data.get(str(user_id), 0) + eklenecek_saniye
+    with open(DB_MESAI, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# ==========================================
+# 4. MESAİ SİSTEMİ (YENİ EKLENEN KISIM)
+# ==========================================
+
+async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
+    mesai = aktif_mesailer.pop(user_id, None)
+    if not mesai:
+        return
+
+    # Eğer mesai aktifse, son çalıştığı süreyi toplama ekle
+    if mesai["durum"] == "aktif":
+        mesai["toplam_saniye"] += time.time() - mesai["aktif_baslangic"]
+
+    toplam_saniye = int(mesai["toplam_saniye"])
+    saat, kalan = divmod(toplam_saniye, 3600)
+    dakika, saniye = divmod(kalan, 60)
+    sure_metni = f"{saat} Saat, {dakika} Dakika, {saniye} Saniye"
+
+    kanal = guild.get_channel(mesai["kanal_id"])
+    kullanici = guild.get_member(user_id)
+
+    # Oyuncuya bilgi ver
+    if kanal:
+        sebep_metni = "Sesten çıktığınız için" if sebep == "sesten_cikti" else "Butona bastığınız için"
+        await kanal.send(f"🔒 {sebep_metni} mesai kapatma işlemi başlatıldı.\nGeçerli Mesai Süresi: **{sure_metni}**\nÜst yönetime onay mesajı gönderildi, lütfen kanalın silinmesini bekleyin.")
+
+    # Yönetim log kanalına gönder
+    yonetim_kanal = guild.get_channel(MESAI_YONETIM_KANAL_ID)
+    if yonetim_kanal and kullanici:
+        embed = discord.Embed(title="⏱️ Mesai Onay Talebi", color=discord.Color.orange(), timestamp=discord.utils.utcnow())
+        embed.add_field(name="👤 Yetkili", value=kullanici.mention, inline=False)
+        embed.add_field(name="⏳ Hesaplanmış Süre", value=sure_metni, inline=False)
+        embed.add_field(name="📌 Kapanma Sebebi", value="Ses kanalından ayrıldı." if sebep == "sesten_cikti" else "Manuel Kapatma", inline=False)
+        
+        view = MesaiOnayView(user_id, toplam_saniye, mesai["kanal_id"])
+        await yonetim_kanal.send(embed=embed, view=view)
+
+class MesaiOnayView(discord.ui.View):
+    def __init__(self, user_id, toplam_saniye, kanal_id):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+        self.toplam_saniye = toplam_saniye
+        self.kanal_id = kanal_id
+
+    @discord.ui.button(label="✅ Kabul Et ve Kaydet", style=discord.ButtonStyle.green, custom_id="mesai_kabul")
+    async def kabul_et(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        # Süreyi veritabanına ekle
+        mesai_sure_ekle(self.user_id, self.toplam_saniye)
+        
+        # Butonları devre dışı bırak
+        for child in self.children:
+            child.disabled = True
+        
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.green()
+        embed.title = "✅ Mesai Onaylandı ve Kaydedildi"
+        embed.add_field(name="🛡️ Onaylayan", value=interaction.user.mention, inline=False)
+        
+        await interaction.message.edit(embed=embed, view=self)
+
+        # Mesai kanalını sil
+        kanal = interaction.guild.get_channel(self.kanal_id)
+        if kanal:
+            try:
+                await kanal.delete()
+            except:
+                pass
+
+    @discord.ui.button(label="❌ Reddet", style=discord.ButtonStyle.red, custom_id="mesai_reddet")
+    async def reddet(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        for child in self.children:
+            child.disabled = True
+            
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.red()
+        embed.title = "❌ Mesai Reddedildi"
+        embed.add_field(name="🛡️ Reddeden", value=interaction.user.mention, inline=False)
+        
+        await interaction.message.edit(embed=embed, view=self)
+
+        # Mesai kanalını sil
+        kanal = interaction.guild.get_channel(self.kanal_id)
+        if kanal:
+            try:
+                await kanal.delete()
+            except:
+                pass
+
+class MesaiPersistentView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🟢 Mesai Oluştur", style=discord.ButtonStyle.green, custom_id="mesai_olustur_btn")
+    async def mesai_olustur(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        if interaction.user.id in aktif_mesailer:
+            await interaction.followup.send("❌ Zaten açık bir mesai kanalınız bulunuyor!", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        category = discord.utils.get(guild.categories, name="MESAİLER")
+        if not category:
+            category = await guild.create_category("MESAİLER")
+
+        channel_name = f"mesai-{interaction.user.name.lower()}"
+        
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, attach_files=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        }
+
+        mesai_channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
+        
+        # Sistemi hafızaya kaydet (Başlangıçta bekliyor durumunda)
+        aktif_mesailer[interaction.user.id] = {
+            "kanal_id": mesai_channel.id,
+            "durum": "bekliyor", # bekliyor, aktif, duraklatildi
+            "aktif_baslangic": 0.0,
+            "toplam_saniye": 0.0,
+            "son_foto_zamani": time.time()
+        }
+
+        await interaction.followup.send(f"Mesai kanalınız oluşturuldu: {mesai_channel.mention}", ephemeral=True)
+        
+        embed = discord.Embed(title="🟢 Mesai Odası", color=discord.Color.blue())
+        embed.description = (
+            f"Hoş geldin {interaction.user.mention}!\n\n"
+            "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya şu an **oyun içinden veya aktiflik kanıtı olan bir fotoğraf yüklemelisin.**\n"
+            "📸 Fotoğrafı attığın an sistem `Mesainiz onaylanmıştır` diyecek ve süren işlemeye başlayacaktır.\n"
+            "⏳ Her **30 dakikada bir** yeni kanıt fotoğrafı atmalısın. Atmazsan mesain duraklatılır ve süren sayılmaz."
+        )
+        await mesai_channel.send(content=interaction.user.mention, embed=embed)
+
+    @discord.ui.button(label="🔴 Mesai Kapat", style=discord.ButtonStyle.red, custom_id="mesai_kapat_btn")
+    async def mesai_kapat(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in aktif_mesailer:
+            await interaction.response.send_message("❌ Şu anda açık bir mesainiz bulunmuyor!", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        await mesaiyi_bitir_ve_onaya_gonder(interaction.user.id, interaction.guild, sebep="buton")
+        await interaction.followup.send("Kapatma talebiniz üst yönetime iletildi.", ephemeral=True)
+
+@bot.command(name="mesaikur")
+async def mesaikur(ctx):
+    view = MesaiPersistentView()
+    embed = discord.Embed(
+        title="⏱️ Yetkili Mesai Sistemi",
+        description="Aşağıdaki butonları kullanarak mesainizi başlatabilir veya sonlandırabilirsiniz.\nSes kanalından çıkarsanız mesainiz otomatik kapatma talebine düşer.",
+        color=discord.Color.dark_grey()
+    )
+    await ctx.send(embed=embed, view=view)
+
+@bot.command(name="mesailer")
+async def mesailer(ctx):
+    if not os.path.exists(DB_MESAI):
+        await ctx.send("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!")
+        return
+
+    try:
+        with open(DB_MESAI, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except:
+        data = {}
+
+    if not data:
+        await ctx.send("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!")
+        return
+
+    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    embed = discord.Embed(
+        title="🏆 Türkiye RolePlay - Top 10 Mesai Sıralaması",
+        color=discord.Color.green()
+    )
+
+    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    
+    liste_metni = ""
+    for index, (user_id, toplam_saniye) in enumerate(sirali_liste):
+        user = ctx.guild.get_member(int(user_id))
+        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
+        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
+        
+        saat, kalan = divmod(toplam_saniye, 3600)
+        dakika, _ = divmod(kalan, 60)
+        
+        liste_metni += f"{emoji} {user_name} — **{saat} Saat {dakika} Dakika**\n"
+
+    embed.description = liste_metni if liste_metni else "Henüz kimse mesai yapmamış."
+    await ctx.send(embed=embed)
+
+# 30 Dakikalık Kontrol Döngüsü
+@tasks.loop(minutes=1)
+async def mesai_kontrol_dongusu():
+    su_an = time.time()
+    for user_id, mesai in list(aktif_mesailer.items()):
+        if mesai["durum"] == "aktif":
+            gecen_sure = su_an - mesai["son_foto_zamani"]
+            if gecen_sure >= 1800:  # 1800 saniye = 30 dakika
+                mesai["durum"] = "duraklatildi"
+                mesai["toplam_saniye"] += (su_an - mesai["aktif_baslangic"])
+                
+                # Uyarı yolla
+                guild = bot.guilds[0] # Basitlik için ilk sunucuyu alıyoruz
+                kanal = guild.get_channel(mesai["kanal_id"])
+                if kanal:
+                    await kanal.send(f"⚠️ <@{user_id}> **30 dakikadır fotoğraf yüklemediğiniz için mesainiz DURAKLATILDI!**\nSüre sayımının devam etmesi için yeni bir kanıt fotoğrafı yüklemelisiniz.")
+
+# ==========================================
+# 5. OLAYLAR (EVENTS)
+# ==========================================
+@bot.event
+async def on_ready():
+    bot.add_view(TicketPersistentView())
+    bot.add_view(MesaiPersistentView())
+    mesai_kontrol_dongusu.start() # Döngüyü başlat
+    print(f"Gözlerimi açtım! {bot.user.name} olarak çevrimiçiyim.")
+
+@bot.event
+async def on_member_join(member):
+    role = discord.utils.get(member.guild.roles, name="Vatandaş")
+    if role:
+        try:
+            await member.add_roles(role)
+        except:
+            pass
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Eğer oyuncunun aktif bir mesaisi varsa ve fotoğraf atmışsa
+    if message.author.id in aktif_mesailer:
+        mesai = aktif_mesailer[message.author.id]
+        if message.channel.id == mesai["kanal_id"] and message.attachments:
+            # Fotoğrafı algıladı
+            if mesai["durum"] == "bekliyor":
+                mesai["durum"] = "aktif"
+                mesai["aktif_baslangic"] = time.time()
+                mesai["son_foto_zamani"] = time.time()
+                await message.channel.send("✅ **Mesainiz onaylanmıştır!** Süreniz işlemeye başladı.")
+            elif mesai["durum"] == "aktif":
+                mesai["son_foto_zamani"] = time.time()
+                await message.channel.send("📸 Fotoğraf alındı, mesainiz başarıyla devam ediyor.")
+            elif mesai["durum"] == "duraklatildi":
+                mesai["durum"] = "aktif"
+                mesai["aktif_baslangic"] = time.time()
+                mesai["son_foto_zamani"] = time.time()
+                await message.channel.send("▶️ **Fotoğraf doğrulandı, mesainiz kaldığı yerden tekrar başladı!** (Duraklatılan süre hesaplamaya dahil edilmedi.)")
+
+    # Komutların çalışması için bunu eklemek zorundayız
+    await bot.process_commands(message)
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    # Eğer bir kullanıcı ses kanalından tamamen çıkarsa
+    if before.channel is not None and after.channel is None:
+        if member.id in aktif_mesailer:
+            await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
+
+# ==========================================
+# 6. TICKET SİSTEMİ (ÖNCEKİ YAZDIĞIMIZ KODLAR)
+# ==========================================
+
 class TicketPersistentView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -68,62 +362,6 @@ class TicketPersistentView(discord.ui.View):
     async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(TicketModal())
 
-@bot.event
-async def on_ready():
-    bot.add_view(TicketPersistentView())
-    print(f"Gözlerimi açtım! {bot.user.name} olarak sunucuda çevrimiçiyim.")
-
-@bot.event
-async def on_member_join(member):
-    role = discord.utils.get(member.guild.roles, name="Vatandaş")
-    if role:
-        try:
-            await member.add_roles(role)
-            print(f"{member.name} sunucuya katıldı ve otomatik olarak 'Vatandaş' rolü verildi.")
-        except Exception as e:
-            print(f"Rol verilirken hata oluştu: {e}")
-    else:
-        print("Sunucuda 'Vatandaş' adında bir rol bulunamadı!")
-
-# Klasik Top 10 Komutu (!puanlar) - Düz Liste Görünümü
-@bot.command(name="puanlar")
-async def puanlar(ctx):
-    if not os.path.exists(DB_FILE):
-        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
-        return
-
-    try:
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except:
-        data = {}
-
-    if not data:
-        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
-        return
-
-    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-
-    embed = discord.Embed(
-        title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)",
-        color=discord.Color.gold()
-    )
-
-    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    
-    liste_metni = ""
-    for index, (user_id, puan) in enumerate(sirali_liste):
-        user = ctx.guild.get_member(int(user_id))
-        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
-        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
-        
-        liste_metni += f"{emoji} {user_name} — **{puan} Puan**\n"
-
-    embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
-
-    await ctx.send(embed=embed)
-
-# Puanlama Sonrası Kapatma Butonu
 class FinalCloseView(discord.ui.View):
     def __init__(self, ticket_channel):
         super().__init__(timeout=None)
@@ -137,7 +375,6 @@ class FinalCloseView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-# Zaman Aşımı Paneli
 class TicketTimeoutAgainView(discord.ui.View):
     def __init__(self, ticket_channel, opener):
         super().__init__(timeout=None)
@@ -149,24 +386,12 @@ class TicketTimeoutAgainView(discord.ui.View):
         if not interaction.user.guild_permissions.manage_channels:
             await interaction.response.send_message("❌ Bu işlemi sadece yetkililer yapabilir!", ephemeral=True)
             return
-        
         await interaction.response.defer(ephemeral=True)
-        
         opener_name = self.opener.display_name if self.opener else "Bilinmiyor"
         await self.ticket_channel.send(f"🔄 **Ticket {opener_name} için yeniden açıldı!** Yetkililer tekrar işlem yapabilir.")
-        
-        log_channel = interaction.guild.get_channel(LOG_KANAL_ID)
-        if log_channel:
-            embed = discord.Embed(title="🔄 Destek Talebi Yeniden Açıldı", color=discord.Color.blue(), timestamp=discord.utils.utcnow())
-            embed.add_field(name="👤 Talebi Açan", value=self.opener.mention if self.opener else "Bilinmiyor", inline=False)
-            embed.add_field(name="🛡️ İşlemi Yapan Yetkili", value=interaction.user.mention, inline=False)
-            embed.add_field(name="📌 Kanal", value=self.ticket_channel.mention, inline=False)
-            await log_channel.send(embed=embed)
-
         new_view = TicketControlView(self.ticket_channel, self.opener)
         embed_panel = discord.Embed(title="🎫 Destek Kontrol Paneli (Yeniden Açıldı)", description="Aşağıdaki butonları kullanarak işlemleri yönetebilirsiniz.", color=discord.Color.gold())
         await self.ticket_channel.send(embed=embed_panel, view=new_view)
-        
         try:
             await interaction.message.delete()
         except:
@@ -180,7 +405,6 @@ class TicketTimeoutAgainView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-# Puanlama Modal Menüsü
 class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
     feedback = discord.ui.TextInput(
         label="Görüş ve Önerilerin (İsteğe Bağlı)",
@@ -199,28 +423,25 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         await interaction.followup.send("⭐ Puanladığınız için teşekkür ederiz!", ephemeral=True)
         await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** destek talebini **{self.score} Yıldız** ile puanladı. Puanladığınız için teşekkür ederiz!")
         
         if self.claimed_by:
             puan_ekle(self.claimed_by.id, 1)
 
-        log_channel = interaction.guild.get_channel(LOG_KANAL_ID)
+        log_channel = interaction.guild.get_channel(TICKET_LOG_KANAL_ID)
         if log_channel:
             embed = discord.Embed(title="⭐ Destek Talebi Puanlandı", color=discord.Color.green(), timestamp=discord.utils.utcnow())
             embed.add_field(name="👤 Puanlayan Oyuncu", value=self.opener.mention if self.opener else "Bilinmiyor", inline=False)
-            embed.add_field(name="🛡️ İlgilenen Yetkili (Claim Eden)", value=self.claimed_by.mention if self.claimed_by else "Claim Edilmemiş", inline=False)
+            embed.add_field(name="🛡️ İlgilenen Yetkili", value=self.claimed_by.mention if self.claimed_by else "Claim Edilmemiş", inline=False)
             embed.add_field(name="⭐ Verilen Puan", value=f"{self.score} Yıldız (Sisteme 1 Puan Eklendi)", inline=False)
-            embed.add_field(name="📝 Açıklama / Görüş", value=self.feedback.value or "Açıklama belirtilmemiş.", inline=False)
+            embed.add_field(name="📝 Açıklama", value=self.feedback.value or "Açıklama belirtilmemiş.", inline=False)
             embed.add_field(name="📌 Kanal", value=self.ticket_channel.name, inline=False)
-            
             await log_channel.send(embed=embed)
 
         final_view = FinalCloseView(self.ticket_channel)
         await self.ticket_channel.send("🔒 Destek talebi puanlandı. İşleminiz bittikten sonra aşağıdaki butondan kapatabilirsiniz:", view=final_view)
 
-# 1'den 5'e Puanlama Butonları
 class TicketScoreView(discord.ui.View):
     def __init__(self, ticket_channel, claimed_by, opener):
         super().__init__(timeout=60)
@@ -271,25 +492,20 @@ class TicketControlView(discord.ui.View):
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
     async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-
         if not interaction.user.guild_permissions.manage_channels:
             await interaction.followup.send("❌ Bu butonu sadece yetkililer kullanabilir!", ephemeral=True)
             return
-
         if self.claimed_by:
             await interaction.followup.send(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
             return
-
         self.claimed_by = interaction.user
         button.disabled = True
         button.label = f"Claimleyen: {interaction.user.display_name}"
         button.style = discord.ButtonStyle.gray
-
         try:
             await interaction.message.edit(view=self)
         except:
             pass
-
         await interaction.followup.send(f"🔒 Bu destek talebi **{interaction.user.mention}** tarafından devralındı!", ephemeral=False)
 
     @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
@@ -310,52 +526,29 @@ class TicketControlView(discord.ui.View):
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu talebi kapatmaya yetkin yok! Sadece yetkililer kapatabilir.", ephemeral=True)
+            await interaction.followup.send("❌ Bu talebi kapatmaya yetkin yok!", ephemeral=True)
             return
-        
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
         msg = await interaction.followup.send("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
         score_view.message = msg
 
 class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
-    game_name = discord.ui.TextInput(
-        label="Oyun İçi Adın / Discord Adın",
-        placeholder="Örn: Pehlivan",
-        required=True,
-        max_length=50
-    )
-    
-    reported_player = discord.ui.TextInput(
-        label="Şikayet Edilen Oyuncu (Varsa)",
-        placeholder="Yoksa 'Yok' yazabilirsin",
-        required=False,
-        max_length=50
-    )
-    
-    description = discord.ui.TextInput(
-        label="Şikayet / Destek Konusu",
-        placeholder="Yaşadığın durumu detaylıca buraya yaz...",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=500
-    )
+    game_name = discord.ui.TextInput(label="Oyun İçi Adın / Discord Adın", placeholder="Örn: Pehlivan", required=True, max_length=50)
+    reported_player = discord.ui.TextInput(label="Şikayet Edilen Oyuncu (Varsa)", placeholder="Yoksa 'Yok' yazabilirsin", required=False, max_length=50)
+    description = discord.ui.TextInput(label="Şikayet / Destek Konusu", placeholder="Yaşadığın durumu detaylıca buraya yaz...", style=discord.TextStyle.paragraph, required=True, max_length=500)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-
         guild = interaction.guild
         category = discord.utils.get(guild.categories, name="DESTEK TALEPLERİ")
-        
         if not category:
             category = await guild.create_category("DESTEK TALEPLERİ")
 
         channel_name = f"ticket-{interaction.user.name.lower()}"
         existing_channel = discord.utils.get(category.channels, name=channel_name)
-        
         if existing_channel:
-            await interaction.followup.send("❌ Sadece 1 ticket açabilirsiniz! Zaten açık olan bir destek talebiniz bulunuyor.", ephemeral=True)
+            await interaction.followup.send("❌ Sadece 1 ticket açabilirsiniz!", ephemeral=True)
             return
 
         overwrites = {
@@ -374,7 +567,6 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
         embed.add_field(name="📝 Açıklama", value=self.description.value, inline=False)
 
         view = TicketControlView(ticket_channel, interaction.user)
-        
         trrp_role = discord.utils.get(guild.roles, name="TRRP")
         ping_text = trrp_role.mention if trrp_role else "@TRRP"
 
@@ -389,6 +581,34 @@ async def ticketkur(ctx):
         color=discord.Color.blue()
     )
     await ctx.send(embed=embed, view=view)
+
+@bot.command(name="puanlar")
+async def puanlar(ctx):
+    if not os.path.exists(DB_TICKET):
+        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
+        return
+    try:
+        with open(DB_TICKET, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except:
+        data = {}
+    if not data:
+        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
+        return
+
+    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
+    embed = discord.Embed(title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)", color=discord.Color.gold())
+    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    
+    liste_metni = ""
+    for index, (user_id, puan) in enumerate(sirali_liste):
+        user = ctx.guild.get_member(int(user_id))
+        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
+        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
+        liste_metni += f"{emoji} {user_name} — **{puan} Puan**\n"
+
+    embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
+    await ctx.send(embed=embed)
 
 if __name__ == "__main__":
     keep_alive()
