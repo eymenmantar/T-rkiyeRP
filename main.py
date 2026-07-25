@@ -3,10 +3,12 @@ import json
 import time
 import asyncio
 import urllib.request
+import io
 from threading import Thread
 import discord
 from discord.ext import commands, tasks
 from flask import Flask
+from PIL import Image
 
 # ==========================================
 # 1. WEB SUNUCUSU (7/24 AKTİF TUTMA)
@@ -44,12 +46,15 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 📌 KANAL ID VE İSİM AYARLARI (KENDİ SUNUCUNA GÖRE DOLDUR)
+# 📌 KANAL ID VE İSİM AYARLARI
 TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
 MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
-# Yetkililerin mesai açabileceği ve gezinebileceği izinli kanal isimleri
+# 📸 ÖRNEK FOTOĞRAF LİNKİ (Buraya örnek kanıt fotoğrafının Discord veya hızlı resim linkini yapıştır)
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a663828&is=6a64e6a8&hm=9618b5f190cb6209e569cafe29898db4337aef77fd5eb39651f58fd6549fd1c3" 
+
+# Yetkililerin mesai açabileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
     "🟢Aktif Yetkili 1", 
     "🟢Aktif Yetkili 2", 
@@ -239,10 +244,12 @@ class MesaiPersistentView(discord.ui.View):
         embed = discord.Embed(title="🟢 Mesai Odası", color=discord.Color.blue())
         embed.description = (
             f"Hoş geldin {interaction.user.mention}!\n\n"
-            "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya şu an **oyun içinden veya aktiflik kanıtı olan bir fotoğraf yüklemelisin.**\n"
-            "📸 Fotoğrafı attığın an sistem `Mesainiz onaylanmıştır` diyecek ve süren işlemeye başlayacaktır.\n"
-            "⏳ Her **30 dakikada bir** yeni kanıt fotoğrafı atmalısın. Atmazsan mesain duraklatılır ve süren sayılmaz."
+            "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya **oyun ekranını gösteren geçerli bir fotoğraf** yüklemelisin.\n"
+            "📸 Fotoğrafı attığın an sistem kontrol edecek, doğruysa `Mesainiz onaylanmıştır` diyecek ve süren işlemeye başlayacaktır.\n"
+            "⏳ Her **30 dakikada bir** yeni kanıt fotoğrafı atmalısın.\n\n"
+            "👇 **ÖRNEK KANIT FOTOĞRAFI AŞAĞIDADIR:** Lütfen buna benzer tam ekran oyun görüntüsü atın."
         )
+        embed.set_image(url=ORNEK_FOTOGRAF_URL)
         await mesai_channel.send(content=interaction.user.mention, embed=embed)
 
     @discord.ui.button(label="🔴 Mesai Kapat", style=discord.ButtonStyle.red, custom_id="mesai_kapat_btn")
@@ -346,29 +353,42 @@ async def on_message(message):
     if message.author.id in aktif_mesailer:
         mesai = aktif_mesailer[message.author.id]
         if message.channel.id == mesai["kanal_id"] and message.attachments:
-            if mesai["durum"] == "bekliyor":
-                mesai["durum"] = "aktif"
-                mesai["aktif_baslangic"] = time.time()
-                mesai["son_foto_zamani"] = time.time()
-                await message.channel.send("✅ **Mesainiz onaylanmıştır!** Süreniz işlemeye başladı.")
-            elif mesai["durum"] == "aktif":
-                mesai["son_foto_zamani"] = time.time()
-                await message.channel.send("📸 Fotoğraf alındı, mesainiz başarıyla devam ediyor.")
-            elif mesai["durum"] == "duraklatildi":
-                mesai["durum"] = "aktif"
-                mesai["aktif_baslangic"] = time.time()
-                mesai["son_foto_zamani"] = time.time()
-                await message.channel.send("▶️ **Fotoğraf doğrulandı, mesainiz kaldığı yerden tekrar başladı!**")
+            attachment = message.attachments[0]
+            
+            if attachment.content_type and attachment.content_type.startswith('image/'):
+                try:
+                    image_bytes = await attachment.read()
+                    img = Image.open(io.BytesIO(image_bytes))
+                    
+                    if img.width < 800 or img.width <= img.height:
+                        await message.channel.send(f"❌ {message.author.mention} **Geçersiz Fotoğraf!**\nAttığınız fotoğraf oyun ekranına benzemiyor (Dikey çekim veya çok küçük boyutlu). Lütfen tam ekran yatay bir oyun görüntüsü atın!")
+                        return
+                        
+                except Exception as e:
+                    await message.channel.send("⚠️ Fotoğraf okunurken bir hata oluştu, lütfen farklı bir fotoğraf atın.")
+                    return
+
+                if mesai["durum"] == "bekliyor":
+                    mesai["durum"] = "aktif"
+                    mesai["aktif_baslangic"] = time.time()
+                    mesai["son_foto_zamani"] = time.time()
+                    await message.channel.send("✅ **Mesainiz onaylanmıştır!** Süreniz işlemeye başladı.")
+                elif mesai["durum"] == "aktif":
+                    mesai["son_foto_zamani"] = time.time()
+                    await message.channel.send("📸 Fotoğraf doğrulandı, mesainiz başarıyla devam ediyor.")
+                elif mesai["durum"] == "duraklatildi":
+                    mesai["durum"] = "aktif"
+                    mesai["aktif_baslangic"] = time.time()
+                    mesai["son_foto_zamani"] = time.time()
+                    await message.channel.send("▶️ **Fotoğraf doğrulandı, mesainiz kaldığı yerden tekrar başladı!**")
 
     await bot.process_commands(message)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
     if member.id in aktif_mesailer:
-        # Eğer yetkili aktif bir mesaideyken ses değiştirdiyse
         yeni_kanal = after.channel
         
-        # 1. Tamamen sesten çıktıysa VEYA izinli yetkili kanallarının DIŞINDA bir kanala gittiyse mesaiyi kapat
         if yeni_kanal is None or yeni_kanal.name not in IZINLI_KANALLARI:
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
