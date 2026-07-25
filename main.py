@@ -66,7 +66,21 @@ async def on_member_join(member):
     else:
         print("Sunucuda 'Vatandaş' adında bir rol bulunamadı!")
 
-# Puanlama Modal Menüsü (Log Gönderme Kısmı)
+# Puanlama Sonrası Kapatma Butonu
+class FinalCloseView(discord.ui.View):
+    def __init__(self, ticket_channel):
+        super().__init__(timeout=None)
+        self.ticket_channel = ticket_channel
+
+    @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="final_close_ticket")
+    async def final_close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_channels:
+            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+            return
+        await interaction.response.defer()
+        await self.ticket_channel.delete()
+
+# Puanlama Modal Menüsü (Log Gönderme ve Kanalı Kapatmama Kısmı)
 class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
     feedback = discord.ui.TextInput(
         label="Görüş ve Önerilerin (İsteğe Bağlı)",
@@ -86,7 +100,8 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         
-        await interaction.followup.send(f"Teşekkürler! Puanınız alındı (Seçilen: {self.score} Yıldız, Eklenen Puan: 1).", ephemeral=True)
+        await interaction.followup.send("⭐ Puanladığınız için teşekkür ederiz!", ephemeral=True)
+        await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** destek talebini **{self.score} Yıldız** ile puanladı. Puanladığınız için teşekkür ederiz!")
         
         # Log kanalına embed gönderme
         log_channel = interaction.guild.get_channel(LOG_KANAL_ID)
@@ -96,12 +111,15 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
             embed.add_field(name="🛡️ İlgilenen Yetkili (Claim Eden)", value=self.claimed_by.mention if self.claimed_by else "Claim Edilmemiş", inline=False)
             embed.add_field(name="⭐ Verilen Puan", value=f"{self.score} Yıldız (Sisteme 1 Puan Eklendi)", inline=False)
             embed.add_field(name="📝 Açıklama / Görüş", value=self.feedback.value or "Açıklama belirtilmemiş.", inline=False)
+            embed.add_field(name="📌 Kanal", value=self.ticket_channel.name, inline=False)
             
             await log_channel.send(embed=embed)
 
-        await self.ticket_channel.delete()
+        # Kanal silinmiyor, yetkilinin kapatabilmesi için buton bırakılıyor
+        final_view = FinalCloseView(self.ticket_channel)
+        await self.ticket_channel.send("🔒 Destek talebi puanlandı. İşleminiz bittikten sonra aşağıdaki butondan kapatabilirsiniz:", view=final_view)
 
-# 1'den 5'e Puanlama Buttonları
+# 1'den 5'e Puanlama Butonları
 class TicketScoreView(discord.ui.View):
     def __init__(self, ticket_channel, claimed_by, opener):
         super().__init__(timeout=60)
@@ -137,23 +155,44 @@ class TicketScoreView(discord.ui.View):
             if self.message:
                 await self.message.edit(view=self)
             
-            timeout_view = TicketTimeoutAgainView(self.ticket_channel)
+            timeout_view = TicketTimeoutAgainView(self.ticket_channel, self.opener)
             await self.ticket_channel.send("⏱️ 1 dakika içinde cevap verilmediği için puanlama zaman aşımına uğradı.", view=timeout_view)
         except:
             pass
 
 class TicketTimeoutAgainView(discord.ui.View):
-    def __init__(self, ticket_channel):
+    def __init__(self, ticket_channel, opener):
         super().__init__(timeout=None)
         self.ticket_channel = ticket_channel
+        self.opener = opener
 
-    @discord.ui.button(label="🔒 Talebi Tekrar Kapat", style=discord.ButtonStyle.red, custom_id="timeout_close_ticket")
-    async def timeout_close(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🔄 Talebi Yeniden Aç", style=discord.ButtonStyle.blurple, custom_id="timeout_reopen_ticket")
+    async def timeout_reopen(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu işlemi sadece yetkililer yapabilir!", ephemeral=True)
             return
-        await interaction.response.defer()
-        await self.ticket_channel.delete()
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        opener_name = self.opener.display_name if self.opener else "Bilinmiyor"
+        await self.ticket_channel.send(f"🔄 **Ticket {opener_name} için yeniden açıldı!** Yetkililer tekrar işlem yapabilir.")
+        
+        log_channel = interaction.guild.get_channel(LOG_KANAL_ID)
+        if log_channel:
+            embed = discord.Embed(title="🔄 Destek Talebi Yeniden Açıldı", color=discord.Color.blue(), timestamp=discord.utils.utcnow())
+            embed.add_field(name="👤 Talebi Açan", value=self.opener.mention if self.opener else "Bilinmiyor", inline=False)
+            embed.add_field(name="🛡️ İşlemi Yapan Yetkili", value=interaction.user.mention, inline=False)
+            embed.add_field(name="📌 Kanal", value=self.ticket_channel.mention, inline=False)
+            await log_channel.send(embed=embed)
+
+        new_view = TicketControlView(self.ticket_channel, self.opener)
+        embed_panel = discord.Embed(title="🎫 Destek Kontrol Paneli (Yeniden Açıldı)", description="Aşağıdaki butonları kullanarak işlemleri yönetebilirsiniz.", color=discord.Color.gold())
+        await self.ticket_channel.send(embed=embed_panel, view=new_view)
+        
+        try:
+            await interaction.message.delete()
+        except:
+            pass
 
 class TicketControlView(discord.ui.View):
     def __init__(self, ticket_channel, opener):
@@ -206,7 +245,6 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Önce defer ile Discord'a anında yanıt veriyoruz (Hata uçup gidiyor)
         await interaction.response.defer(ephemeral=True)
 
         if not interaction.user.guild_permissions.manage_channels:
@@ -214,7 +252,6 @@ class TicketControlView(discord.ui.View):
             return
         
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
-        # followup kullanarak hatasız bir şekilde puanlama menüsünü gönderiyoruz
         msg = await interaction.followup.send("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
         score_view.message = msg
 
