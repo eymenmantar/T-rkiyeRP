@@ -52,7 +52,7 @@ MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı 
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ (Buraya örnek kanıt fotoğrafının Discord veya hızlı resim linkini yapıştır)
-ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a663828&is=6a64e6a8&hm=9618b5f190cb6209e569cafe29898db4337aef77fd5eb39651f58fd6549fd1c3" 
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a663828&is=6a64e6a8&hm=9618b5f190cb6209e569cafe29898db4337aef77fd5eb39651f58fd6549fd1c3&"
 
 # Yetkililerin mesai açabileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
