@@ -164,20 +164,17 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
     async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu butonu sadece yetkililer kullanabilir!", ephemeral=True)
-            return
-
+        # 1. ANINDA yanıt veriyoruz ki Discord hata vermesin!
         if self.claimed_by:
             await interaction.response.send_message(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
             return
 
-        # Zaman aşımı hatasını tamamen engellemek için doğrudan mesajı güncelliyoruz
+        self.claimed_by = interaction.user
         button.disabled = True
         button.label = f"Claimleyen: {interaction.user.display_name}"
         button.style = discord.ButtonStyle.gray
-        self.claimed_by = interaction.user
 
+        # Saniyesinde Discord'a arayüzü güncellettiğimiz için hata uçup gidiyor
         await interaction.response.edit_message(view=self)
 
         trrp_role = discord.utils.get(interaction.guild.roles, name="TRRP")
@@ -187,23 +184,14 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
     async def status_processing(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
-            return
         await interaction.response.send_message("📌 Durum güncellendi: **Çözülüyor...**", ephemeral=False)
 
     @discord.ui.button(label="✅ Çözüldü", style=discord.ButtonStyle.green, custom_id="status_resolved")
     async def status_resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
-            return
         await interaction.response.send_message("✅ Talep **Çözüldü** olarak işaretlendi.", ephemeral=False)
 
     @discord.ui.button(label="❌ Çözülmedi", style=discord.ButtonStyle.gray, custom_id="status_unresolved")
     async def status_unresolved(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
-            return
         await interaction.response.send_message("⚠️ Talep henüz **Çözülmedi**, yetkililer inceliyor.", ephemeral=False)
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
