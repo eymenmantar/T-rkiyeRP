@@ -72,7 +72,20 @@ DB_MESAI = "mesai_sureleri.json"
 aktif_mesailer = {}
 
 # ==========================================
-# 3. VERİTABANI İŞLEMLERİ
+# 3. YETKİ KONTROL FONKSİYONU (Stajyer ve Üstü)
+# ==========================================
+def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
+    if member.guild_permissions.administrator:
+        return True
+    # Stajyer Admin veya Üst Yönetim rollerinden birine sahipseTrue döner
+    izinli_roller = ["Stajyer Admin", "Üst Yönetim"]
+    for rol in member.roles:
+        if rol.name in izinli_roller:
+            return True
+    return False
+
+# ==========================================
+# 4. VERİTABANI İŞLEMLERİ
 # ==========================================
 def puan_ekle(user_id, miktar=1):
     data = {}
@@ -99,7 +112,7 @@ def mesai_sure_ekle(user_id, eklenecek_saniye):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 # ==========================================
-# 4. MESAİ SİSTEMİ
+# 5. MESAİ SİSTEMİ
 # ==========================================
 
 async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
@@ -144,6 +157,7 @@ class MesaiOnayView(discord.ui.View):
         self.kanal_id = kanal_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # Mesai onaylarını sadece ÜST YÖNETİM (veya Admin) yapabilir
         rol = discord.utils.get(interaction.guild.roles, name="Üst Yönetim")
         if not rol or rol not in interaction.user.roles:
             if not interaction.user.guild_permissions.administrator:
@@ -223,11 +237,16 @@ class MesaiPersistentView(discord.ui.View):
 
         channel_name = f"mesai-{interaction.user.name.lower()}"
         
+        stajyer_rolu = discord.utils.get(guild.roles, name="Stajyer Admin")
+
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, attach_files=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
+
+        if stajyer_rolu:
+            overwrites[stajyer_rolu] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
         mesai_channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
         
@@ -327,7 +346,7 @@ async def mesai_kontrol_dongusu():
                     await kanal.send(f"⚠️ <@{user_id}> **30 dakikadır fotoğraf yüklemediğiniz için mesainiz DURAKLATILDI!**\nSüre sayımının devam etmesi için yeni bir kanıt fotoğrafı yüklemelisiniz.")
 
 # ==========================================
-# 5. OLAYLAR (EVENTS)
+# 6. OLAYLAR (EVENTS)
 # ==========================================
 @bot.event
 async def on_ready():
@@ -360,12 +379,10 @@ async def on_message(message):
                     image_bytes = await attachment.read()
                     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
                     
-                    # 1. Boyut kontrolü (Yatay ve yeterince büyük mü?)
                     if img.width < 800 or img.width <= img.height:
                         await message.channel.send(f"❌ {message.author.mention} **Geçersiz Fotoğraf!** Lütfen tam ekran yatay bir oyun görüntüsü atın.")
                         return
 
-                    # 2. Renk ve Discord Arayüzü Filtresi (Gri/Koyu Discord tonlarını engeller)
                     small_img = img.resize((50, 50))
                     colors = small_img.getcolors(50 * 50)
                     colors.sort(key=lambda x: x[0], reverse=True)
@@ -406,7 +423,7 @@ async def on_voice_state_update(member, before, after):
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
-# 6. TICKET SİSTEMİ
+# 7. TICKET SİSTEMİ
 # ==========================================
 
 class TicketPersistentView(discord.ui.View):
@@ -424,8 +441,8 @@ class FinalCloseView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="final_close_ticket")
     async def final_close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.response.send_message("❌ Bu talebi kapatmaya yetkin yok!", ephemeral=True)
             return
         await interaction.response.defer()
         await self.ticket_channel.delete()
@@ -438,8 +455,8 @@ class TicketTimeoutAgainView(discord.ui.View):
 
     @discord.ui.button(label="🔄 Ticketı Yeniden Aç", style=discord.ButtonStyle.blurple, custom_id="timeout_reopen_ticket")
     async def timeout_reopen(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu işlemi sadece yetkililer yapabilir!", ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.response.send_message("❌ Bu işlemi sadece stajyer ve üzeri yetkililer yapabilir!", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         opener_name = self.opener.display_name if self.opener else "Bilinmiyor"
@@ -454,8 +471,8 @@ class TicketTimeoutAgainView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="timeout_close_ticket_direct")
     async def timeout_close_direct(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.response.send_message("❌ Bu talebi kapatmaya yetkin yok!", ephemeral=True)
             return
         await interaction.response.defer()
         await self.ticket_channel.delete()
@@ -547,8 +564,9 @@ class TicketControlView(discord.ui.View):
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
     async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu butonu sadece yetkililer kullanabilir!", ephemeral=True)
+        # STAJYER VE ÜSTÜ CLAİMLEYEBİLİR
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Bu butonu sadece stajyer ve üzeri yetkililer kullanabilir!", ephemeral=True)
             return
         if self.claimed_by:
             await interaction.followup.send(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
@@ -566,22 +584,31 @@ class TicketControlView(discord.ui.View):
     @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
     async def status_processing(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Bu işlemi sadece yetkililer yapabilir!", ephemeral=True)
+            return
         await interaction.followup.send("📌 Durum güncellendi: **Çözülüyor...**", ephemeral=False)
 
     @discord.ui.button(label="✅ Çözüldü", style=discord.ButtonStyle.green, custom_id="status_resolved")
     async def status_resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Bu işlemi sadece yetkililer yapabilir!", ephemeral=True)
+            return
         await interaction.followup.send("✅ Talep **Çözüldü** olarak işaretlendi.", ephemeral=False)
 
     @discord.ui.button(label="❌ Çözülmedi", style=discord.ButtonStyle.gray, custom_id="status_unresolved")
     async def status_unresolved(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Bu işlemi sadece yetkililer yapabilir!", ephemeral=True)
+            return
         await interaction.followup.send("⚠️ Talep henüz **Çözülmedi**, yetkililer inceliyor.", ephemeral=False)
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.user.guild_permissions.manage_channels:
+        if not stajyer_veya_ustu_mu(interaction.user):
             await interaction.followup.send("❌ Bu talebi kapatmaya yetkin yok!", ephemeral=True)
             return
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
@@ -606,7 +633,6 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
             await interaction.followup.send("❌ Sadece 1 ticket açabilirsiniz!", ephemeral=True)
             return
 
-        # Stajyer Admin rolünü otomatik olarak bulup kanala ekliyoruz
         stajyer_rolu = discord.utils.get(guild.roles, name="Stajyer Admin")
 
         overwrites = {
@@ -615,7 +641,6 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
 
-        # Eğer "Stajyer Admin" rolü sunucuda varsa, ticket'ı görme iznini otomatik veriyoruz
         if stajyer_rolu:
             overwrites[stajyer_rolu] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
