@@ -21,7 +21,6 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# Python'un kendi içinde olan urllib ile dış kütüphanesiz ping atma
 def self_ping():
     while True:
         try:
@@ -161,8 +160,9 @@ class TicketControlView(discord.ui.View):
 
         await interaction.message.edit(view=self)
 
-        trrp_role = discord.utils.get(interaction.guild.roles, name="trrp")
-        ping_text = trrp_role.mention if trrp_role else "@trrp"
+        # TRRP rolünü büyük harfle aratıyoruz
+        trrp_role = discord.utils.get(interaction.guild.roles, name="TRRP")
+        ping_text = trrp_role.mention if trrp_role else "@TRRP"
 
         await interaction.followup.send(f"🔒 Bu destek talebi **{interaction.user.mention}** tarafından devralındı! {ping_text}", ephemeral=False)
 
