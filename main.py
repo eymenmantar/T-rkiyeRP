@@ -38,7 +38,7 @@ intents.presences = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # BURAYA AÇTIĞIN LOG KANALININ ID'SİNİ YAPIŞTIR (Örn: 123456789012345678)
-LOG_KANAL_ID = 000000000000000000 
+LOG_KANAL_ID = 1530432112077963274 
 
 # Kalıcı Buton Görünümü
 class TicketPersistentView(discord.ui.View):
