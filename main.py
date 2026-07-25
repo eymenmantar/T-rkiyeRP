@@ -101,7 +101,7 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
 
         await self.ticket_channel.delete()
 
-# 1'den 5'e Puanlama Butonları
+# 1'den 5'e Puanlama Buttonları
 class TicketScoreView(discord.ui.View):
     def __init__(self, ticket_channel, claimed_by, opener):
         super().__init__(timeout=60)
@@ -206,6 +206,7 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Önce defer ile Discord'a anında yanıt veriyoruz (Hata uçup gidiyor)
         await interaction.response.defer(ephemeral=True)
 
         if not interaction.user.guild_permissions.manage_channels:
@@ -213,6 +214,7 @@ class TicketControlView(discord.ui.View):
             return
         
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
+        # followup kullanarak hatasız bir şekilde puanlama menüsünü gönderiyoruz
         msg = await interaction.followup.send("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
         score_view.message = msg
 
