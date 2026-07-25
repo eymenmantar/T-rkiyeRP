@@ -44,10 +44,20 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 📌 KANAL ID AYARLARI (KENDİ SUNUCUNA GÖRE DOLDUR)
+# 📌 KANAL ID VE İSİM AYARLARI (KENDİ SUNUCUNA GÖRE DOLDUR)
 TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
-MESAI_KURULUM_KANAL_ID = 1530432112077963274  # !mesaikur komutunun atılacağı (herkesin görebileceği) kanal
-MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği (Sadece Üst Yönetimin görebileceği) gizli kanal
+MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal
+MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
+
+# Yetkililerin mesai açabileceği izinli ses ve metin kanallarının tam isimleri
+IZINLI_KANALLAR = [
+    "🟢Aktif Yetkili 1", 
+    "🟢Aktif Yetkili 2", 
+    "🟢Aktif Yetkili 3", 
+    "🟢Aktif Yetkili 4",
+    "🔴 │ İnaktif Yetkili",
+    "🤼pehlivanın-ofisi"
+]
 
 # Veritabanı Dosyaları
 DB_TICKET = "puanlar.json"
@@ -125,7 +135,6 @@ class MesaiOnayView(discord.ui.View):
         self.kanal_id = kanal_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Sadece "Üst Yönetim" rolüne sahip olanlar butonları kullanabilir
         rol = discord.utils.get(interaction.guild.roles, name="Üst Yönetim")
         if not rol or rol not in interaction.user.roles:
             if not interaction.user.guild_permissions.administrator:
@@ -136,7 +145,6 @@ class MesaiOnayView(discord.ui.View):
     @discord.ui.button(label="✅ Kabul Et ve Kaydet", style=discord.ButtonStyle.green, custom_id="mesai_kabul")
     async def kabul_et(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        
         mesai_sure_ekle(self.user_id, self.toplam_saniye)
         
         for child in self.children:
@@ -183,6 +191,13 @@ class MesaiPersistentView(discord.ui.View):
 
     @discord.ui.button(label="🟢 Mesai Oluştur", style=discord.ButtonStyle.green, custom_id="mesai_olustur_btn")
     async def mesai_olustur(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Yetkilinin bulunduğu kanalı kontrol et (Ses kanalı veya belirttiğin özel metin kanalı)
+        bulundugu_kanal = interaction.user.voice.channel if interaction.user.voice else interaction.channel
+        
+        if not bulundugu_kanal or bulundugu_kanal.name not in IZINLI_KANALLARI:
+            await interaction.response.send_message("❌ Mesai açılamıyor lütfen mesainizi açabileceğiniz ses kanallarına gidin.", ephemeral=True)
+            return
+
         await interaction.response.defer(ephemeral=True)
         
         if interaction.user.id in aktif_mesailer:
@@ -235,7 +250,6 @@ class MesaiPersistentView(discord.ui.View):
 
 @bot.command(name="mesaikur")
 async def mesaikur(ctx):
-    # Sadece komutun atılması gereken kanalda çalışmasını istersen buraya kontrol eklenebilir
     view = MesaiPersistentView()
     embed = discord.Embed(
         title="⏱️ Yetkili Mesai Sistemi",
