@@ -77,7 +77,6 @@ aktif_mesailer = {}
 def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
     if member.guild_permissions.administrator:
         return True
-    # Stajyer Admin veya Üst Yönetim rollerinden birine sahipseTrue döner
     izinli_roller = ["Stajyer Admin", "Üst Yönetim"]
     for rol in member.roles:
         if rol.name in izinli_roller:
@@ -157,7 +156,6 @@ class MesaiOnayView(discord.ui.View):
         self.kanal_id = kanal_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Mesai onaylarını sadece ÜST YÖNETİM (veya Admin) yapabilir
         rol = discord.utils.get(interaction.guild.roles, name="Üst Yönetim")
         if not rol or rol not in interaction.user.roles:
             if not interaction.user.guild_permissions.administrator:
@@ -564,7 +562,6 @@ class TicketControlView(discord.ui.View):
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
     async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        # STAJYER VE ÜSTÜ CLAİMLEYEBİLİR
         if not stajyer_veya_ustu_mu(interaction.user):
             await interaction.followup.send("❌ Bu butonu sadece stajyer ve üzeri yetkililer kullanabilir!", ephemeral=True)
             return
