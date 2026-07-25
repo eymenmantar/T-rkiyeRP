@@ -71,11 +71,6 @@ class TicketPersistentView(discord.ui.View):
 @bot.event
 async def on_ready():
     bot.add_view(TicketPersistentView())
-    try:
-        await bot.tree.sync() # Slash komutlarını Discord'a kaydeder
-        print("Slash komutları senkronize edildi.")
-    except Exception as e:
-        print(f"Senkronizasyon hatası: {e}")
     print(f"Gözlerimi açtım! {bot.user.name} olarak sunucuda çevrimiçiyim.")
 
 @bot.event
@@ -90,11 +85,11 @@ async def on_member_join(member):
     else:
         print("Sunucuda 'Vatandaş' adında bir rol bulunamadı!")
 
-# Puanlı Top 10 Sıralama Slash Komutu
-@bot.tree.command(name="puan-sıralama", description="En çok puan toplayan ilk 10 yetkiliyi gösterir.")
-async def puan_siralama(interaction: discord.Interaction):
+# Klasik Top 10 Komutu (!puanlar)
+@bot.command(name="puanlar")
+async def puanlar(ctx):
     if not os.path.exists(DB_FILE):
-        await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
+        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
         return
 
     try:
@@ -104,10 +99,9 @@ async def puan_siralama(interaction: discord.Interaction):
         data = {}
 
     if not data:
-        await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
+        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
         return
 
-    # Puanlara göre büyükten küçüğe sıralama
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
 
     embed = discord.Embed(
@@ -119,7 +113,7 @@ async def puan_siralama(interaction: discord.Interaction):
     medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
     for index, (user_id, puan) in enumerate(sirali_liste):
-        user = interaction.guild.get_member(int(user_id))
+        user = ctx.guild.get_member(int(user_id))
         user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
         emoji = medal_emojis[index] if index < 10 else f"{index+1}."
         
@@ -129,7 +123,7 @@ async def puan_siralama(interaction: discord.Interaction):
             inline=False
         )
 
-    await interaction.response.send_message(embed=embed)
+    await ctx.send(embed=embed)
 
 # Puanlama Sonrası Kapatma Butonu
 class FinalCloseView(discord.ui.View):
@@ -211,7 +205,6 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
         await interaction.followup.send("⭐ Puanladığınız için teşekkür ederiz!", ephemeral=True)
         await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** destek talebini **{self.score} Yıldız** ile puanladı. Puanladığınız için teşekkür ederiz!")
         
-        # Eğer bir yetkili claim alıp ilgilendiyse otomatik puan ekle
         if self.claimed_by:
             puan_ekle(self.claimed_by.id, 1)
 
