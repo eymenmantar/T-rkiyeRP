@@ -146,7 +146,6 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
         await interaction.followup.send("⭐ Puanladığınız için teşekkür ederiz!", ephemeral=True)
         await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** destek talebini **{self.score} Yıldız** ile puanladı. Puanladığınız için teşekkür ederiz!")
         
-        # Log kanalına embed gönderme
         log_channel = interaction.guild.get_channel(LOG_KANAL_ID)
         if log_channel:
             embed = discord.Embed(title="⭐ Destek Talebi Puanlandı", color=discord.Color.green(), timestamp=discord.utils.utcnow())
@@ -231,10 +230,7 @@ class TicketControlView(discord.ui.View):
         except:
             pass
 
-        trrp_role = discord.utils.get(interaction.guild.roles, name="TRRP")
-        ping_text = trrp_role.mention if trrp_role else "@TRRP"
-
-        await interaction.followup.send(f"🔒 Bu destek talebi **{interaction.user.mention}** tarafından devralındı! {ping_text}", ephemeral=False)
+        await interaction.followup.send(f"🔒 Bu destek talebi **{interaction.user.mention}** tarafından devralındı!", ephemeral=False)
 
     @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
     async def status_processing(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -318,7 +314,12 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
         embed.add_field(name="📝 Açıklama", value=self.description.value, inline=False)
 
         view = TicketControlView(ticket_channel, interaction.user)
-        await ticket_channel.send(embed=embed, view=view)
+        
+        # TRRP rolünü buraya, yani ticket ilk açıldığında gönderilen mesaja ekledik
+        trrp_role = discord.utils.get(guild.roles, name="TRRP")
+        ping_text = trrp_role.mention if trrp_role else "@TRRP"
+
+        await ticket_channel.send(content=ping_text, embed=embed, view=view)
 
 @bot.command()
 async def ticketkur(ctx):
