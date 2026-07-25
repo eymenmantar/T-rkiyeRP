@@ -38,7 +38,7 @@ intents.presences = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 📌 BURAYA DISCORD'DA AÇTIĞIN LOG KANALININ ID'SİNİ YAPIŞTIR
-LOG_KANAL_ID = 1530432112077963274 
+LOG_KANAL_ID = 1530494818130591836
 
 # Kalıcı Buton Görünümü
 class TicketPersistentView(discord.ui.View):
@@ -149,10 +149,8 @@ class TicketTimeoutAgainView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Tekrar Kapat", style=discord.ButtonStyle.red, custom_id="timeout_close_ticket")
     async def timeout_close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
             return
         await self.ticket_channel.delete()
 
@@ -165,15 +163,12 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
     async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
-
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu butonu sadece yetkililer kullanabilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu butonu sadece yetkililer kullanabilir!", ephemeral=True)
             return
 
         if self.claimed_by:
-            await interaction.followup.send(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
+            await interaction.response.send_message(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
             return
 
         self.claimed_by = interaction.user
@@ -181,7 +176,7 @@ class TicketControlView(discord.ui.View):
         button.label = f"Claimleyen: {interaction.user.display_name}"
         button.style = discord.ButtonStyle.gray
 
-        await interaction.message.edit(view=self)
+        await interaction.response.edit_message(view=self)
 
         trrp_role = discord.utils.get(interaction.guild.roles, name="TRRP")
         ping_text = trrp_role.mention if trrp_role else "@TRRP"
@@ -190,43 +185,34 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
     async def status_processing(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
             return
-        await interaction.followup.send("📌 Durum güncellendi: **Çözülüyor...**")
+        await interaction.response.send_message("📌 Durum güncellendi: **Çözülüyor...**", ephemeral=False)
 
     @discord.ui.button(label="✅ Çözüldü", style=discord.ButtonStyle.green, custom_id="status_resolved")
     async def status_resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
             return
-        await interaction.followup.send("✅ Talep **Çözüldü** olarak işaretlendi.")
+        await interaction.response.send_message("✅ Talep **Çözüldü** olarak işaretlendi.", ephemeral=False)
 
     @discord.ui.button(label="❌ Çözülmedi", style=discord.ButtonStyle.gray, custom_id="status_unresolved")
     async def status_unresolved(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu durumu sadece yetkililer değiştirebilir!", ephemeral=True)
             return
-        await interaction.followup.send("⚠️ Talep henüz **Çözülmedi**, yetkililer inceliyor.")
+        await interaction.response.send_message("⚠️ Talep henüz **Çözülmedi**, yetkililer inceliyor.", ephemeral=False)
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
-            
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.followup.send("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
             return
         
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
-        msg = await interaction.followup.send("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
-        score_view.message = msg
+        await interaction.response.send_message("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
+        score_view.message = await interaction.original_response()
 
 class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
     game_name = discord.ui.TextInput(
