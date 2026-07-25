@@ -49,7 +49,7 @@ TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
 MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
-# Yetkililerin mesai açabileceği izinli ses ve metin kanallarının tam isimleri
+# Yetkililerin mesai açabileceği ve gezinebileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
     "🟢Aktif Yetkili 1", 
     "🟢Aktif Yetkili 2", 
@@ -114,7 +114,11 @@ async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
     kullanici = guild.get_member(user_id)
 
     if kanal:
-        sebep_metni = "Sesten çıktığınız için" if sebep == "sesten_cikti" else "Butona bastığınız için"
+        if sebep == "sesten_cikti":
+            sebep_metni = "İzinli yetkili ses kanallarından ayrıldığınız için"
+        else:
+            sebep_metni = "Butona bastığınız için"
+        
         await kanal.send(f"🔒 {sebep_metni} mesai kapatma işlemi başlatıldı.\nGeçerli Mesai Süresi: **{sure_metni}**\nÜst yönetime onay mesajı gönderildi, lütfen kanalın silinmesini bekleyin.")
 
     yonetim_kanal = guild.get_channel(MESAI_YONETIM_KANAL_ID)
@@ -122,7 +126,7 @@ async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
         embed = discord.Embed(title="⏱️ Mesai Onay Talebi", color=discord.Color.orange(), timestamp=discord.utils.utcnow())
         embed.add_field(name="👤 Yetkili", value=kullanici.mention, inline=False)
         embed.add_field(name="⏳ Hesaplanmış Süre", value=sure_metni, inline=False)
-        embed.add_field(name="📌 Kapanma Sebebi", value="Ses kanalından ayrıldı." if sebep == "sesten_cikti" else "Manuel Kapatma", inline=False)
+        embed.add_field(name="📌 Kapanma Sebebi", value="Yetkili ses kanalı dışına çıkıldı / sesten ayrıldı." if sebep == "sesten_cikti" else "Manuel Kapatma", inline=False)
         
         view = MesaiOnayView(user_id, toplam_saniye, mesai["kanal_id"])
         await yonetim_kanal.send(embed=embed, view=view)
@@ -191,10 +195,8 @@ class MesaiPersistentView(discord.ui.View):
 
     @discord.ui.button(label="🟢 Mesai Oluştur", style=discord.ButtonStyle.green, custom_id="mesai_olustur_btn")
     async def mesai_olustur(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 1. Önce hatayı engellemek için botun yanıtını hızlıca erteleyelim (ephemeral=True)
         await interaction.response.defer(ephemeral=True)
 
-        # 2. Yetkilinin bulunduğu kanalı güvenli bir şekilde kontrol edelim
         bulundugu_kanal = None
         if interaction.user.voice and interaction.user.voice.channel:
             bulundugu_kanal = interaction.user.voice.channel
@@ -258,7 +260,7 @@ async def mesaikur(ctx):
     view = MesaiPersistentView()
     embed = discord.Embed(
         title="⏱️ Yetkili Mesai Sistemi",
-        description="Aşağıdaki butonları kullanarak mesainizi başlatabilir veya sonlandırabilirsiniz.\nSes kanalından çıkarsanız mesainiz otomatik kapatma talebine düşer.",
+        description="Aşağıdaki butonları kullanarak mesainizi başlatabilir veya sonlandırabilirsiniz.\nİzinli yetkili ses kanallarından tamamen çıkarsanız mesainiz otomatik kapatma talebine düşer.",
         color=discord.Color.dark_grey()
     )
     await ctx.send(embed=embed, view=view)
@@ -362,8 +364,12 @@ async def on_message(message):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    if before.channel is not None and after.channel is None:
-        if member.id in aktif_mesailer:
+    if member.id in aktif_mesailer:
+        # Eğer yetkili aktif bir mesaideyken ses değiştirdiyse
+        yeni_kanal = after.channel
+        
+        # 1. Tamamen sesten çıktıysa VEYA izinli yetkili kanallarının DIŞINDA bir kanala gittiyse mesaiyi kapat
+        if yeni_kanal is None or yeni_kanal.name not in IZINLI_KANALLARI:
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
