@@ -1,6 +1,6 @@
 import os
 import time
-import requests
+import urllib.request
 from threading import Thread
 import discord
 from discord.ext import commands
@@ -21,10 +21,11 @@ def keep_alive():
     t.daemon = True
     t.start()
 
+# Python'un kendi içinde olan urllib ile dış kütüphanesiz ping atma
 def self_ping():
     while True:
         try:
-            requests.get("https://t-rkiyerp.onrender.com")
+            urllib.request.urlopen("https://t-rkiyerp.onrender.com")
         except:
             pass
         time.sleep(240)
