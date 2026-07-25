@@ -152,6 +152,7 @@ class TicketTimeoutAgainView(discord.ui.View):
         if not interaction.user.guild_permissions.manage_channels:
             await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
             return
+        await interaction.response.defer()
         await self.ticket_channel.delete()
 
 class TicketControlView(discord.ui.View):
@@ -206,12 +207,12 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Yetkisi olan (manage_channels) HERHANGİ BİR YETKİLİ, arkadaşı claim almış olsa bile kapatabilir.
         if not interaction.user.guild_permissions.manage_channels:
             await interaction.response.send_message("❌ Bu talebi kapatmaya yetkin yok! Sadece yetkililer kapatabilir.", ephemeral=True)
             return
         
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
+        # Hata vermemesi için direkt response.send_message kullanıyoruz
         await interaction.response.send_message("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
         score_view.message = await interaction.original_response()
 
