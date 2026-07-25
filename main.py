@@ -43,6 +43,7 @@ intents.members = True
 intents.message_content = True
 intents.presences = True
 intents.voice_states = True
+intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -414,6 +415,10 @@ async def on_message(message):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
+    # Botun kendi ses durumunu veya başkalarının ses hareketlerini yanlış algılayıp kısıtlamasını önlüyoruz
+    if member.bot:
+        return
+
     if member.id in aktif_mesailer:
         yeni_kanal = after.channel
         
