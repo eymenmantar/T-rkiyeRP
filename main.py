@@ -606,11 +606,18 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
             await interaction.followup.send("❌ Sadece 1 ticket açabilirsiniz!", ephemeral=True)
             return
 
+        # Stajyer Admin rolünü otomatik olarak bulup kanala ekliyoruz
+        stajyer_rolu = discord.utils.get(guild.roles, name="Stajyer Admin")
+
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
+
+        # Eğer "Stajyer Admin" rolü sunucuda varsa, ticket'ı görme iznini otomatik veriyoruz
+        if stajyer_rolu:
+            overwrites[stajyer_rolu] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
         ticket_channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
         await interaction.followup.send(f"Destek talebin oluşturuldu: {ticket_channel.mention}", ephemeral=True)
