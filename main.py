@@ -172,12 +172,19 @@ class TicketControlView(discord.ui.View):
             await interaction.response.send_message(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
             return
 
+        # Discord'a hemen zamanında yanıt vererek hata oluşmasını engelliyoruz
+        await interaction.response.defer(ephemeral=True)
+
         self.claimed_by = interaction.user
         button.disabled = True
         button.label = f"Claimleyen: {interaction.user.display_name}"
         button.style = discord.ButtonStyle.gray
 
-        await interaction.response.edit_message(view=self)
+        # Mesajı güvenli bir şekilde güncelliyoruz
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
 
         trrp_role = discord.utils.get(interaction.guild.roles, name="TRRP")
         ping_text = trrp_role.mention if trrp_role else "@TRRP"
@@ -212,7 +219,6 @@ class TicketControlView(discord.ui.View):
             return
         
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
-        # Hata vermemesi için direkt response.send_message kullanıyoruz
         await interaction.response.send_message("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
         score_view.message = await interaction.original_response()
 
