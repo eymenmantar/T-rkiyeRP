@@ -38,7 +38,7 @@ intents.presences = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 📌 BURAYA DISCORD'DA AÇTIĞIN LOG KANALININ ID'SİNİ YAPIŞTIR
-LOG_KANAL_ID = 1530494818130591836
+LOG_KANAL_ID = 1530494818130591836 
 
 # Kalıcı Buton Görünümü
 class TicketPersistentView(discord.ui.View):
@@ -206,8 +206,9 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Yetkisi olan (manage_channels) HERHANGİ BİR YETKİLİ, arkadaşı claim almış olsa bile kapatabilir.
         if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ Bu talebi sadece yetkililer kapatabilir!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu talebi kapatmaya yetkin yok! Sadece yetkililer kapatabilir.", ephemeral=True)
             return
         
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
