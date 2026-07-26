@@ -51,7 +51,7 @@ TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
 MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
-# 📸 ÖRNEK FOTOĞRAF LİNKİ (Örnek kanıt fotoğrafının linkini buraya yapıştırabilirsin)
+# 📸 ÖRNEK FOTOĞRAF LİNKİ
 ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a66e0e8&is=6a658f68&hm=b8e232a2d38f4322803717a583546058eba78848a343de1c9bba05f307dd3a0c&" 
 
 # Yetkililerin mesai açabileceği izinli kanal isimleri
@@ -67,6 +67,7 @@ IZINLI_KANALLARI = [
 # Veritabanı Dosyaları
 DB_TICKET = "puanlar.json"
 DB_MESAI = "mesai_sureleri.json"
+DB_CLAIM = "claimler.json"
 
 # Hafızadaki Aktif Mesailer Sözlüğü
 aktif_mesailer = {}
@@ -108,6 +109,18 @@ def mesai_sure_ekle(user_id, eklenecek_saniye):
             pass
     data[str(user_id)] = data.get(str(user_id), 0) + eklenecek_saniye
     with open(DB_MESAI, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+def claim_ekle(user_id, miktar=1):
+    data = {}
+    if os.path.exists(DB_CLAIM):
+        try:
+            with open(DB_CLAIM, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            pass
+    data[str(user_id)] = data.get(str(user_id), 0) + miktar
+    with open(DB_CLAIM, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 # ==========================================
@@ -288,10 +301,42 @@ async def mesaikur(ctx):
     )
     await ctx.send(embed=embed, view=view)
 
-@bot.command(name="mesailer")
-async def mesailer(ctx):
+# ==========================================
+# SLASH SIRALAMA KOMUTLARI (/puan-sıralama vb.)
+# ==========================================
+
+@bot.tree.command(name="puan-sıralama", description="En yüksek puanlı yetkilileri listeler (Top 10)")
+async def puan_siralama(interaction: discord.Interaction):
+    if not os.path.exists(DB_TICKET):
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
+        return
+    try:
+        with open(DB_TICKET, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except:
+        data = {}
+    if not data:
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
+        return
+
+    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
+    embed = discord.Embed(title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)", color=discord.Color.gold())
+    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    
+    liste_metni = ""
+    for index, (user_id, puan) in enumerate(sirali_liste):
+        user = interaction.guild.get_member(int(user_id))
+        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
+        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
+        liste_metni += f"{emoji} {user_name} — **{puan} Puan**\n"
+
+    embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="mesai-sıralama", description="En çok mesai yapan yetkilileri listeler (Top 10)")
+async def mesai_siralama(interaction: discord.Interaction):
     if not os.path.exists(DB_MESAI):
-        await ctx.send("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!")
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!", ephemeral=True)
         return
 
     try:
@@ -301,21 +346,16 @@ async def mesailer(ctx):
         data = {}
 
     if not data:
-        await ctx.send("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!")
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!", ephemeral=True)
         return
 
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-
-    embed = discord.Embed(
-        title="🏆 Türkiye RolePlay - Top 10 Mesai Sıralaması",
-        color=discord.Color.green()
-    )
-
+    embed = discord.Embed(title="🏆 Türkiye RolePlay - Top 10 Mesai Sıralaması", color=discord.Color.green())
     medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     
     liste_metni = ""
     for index, (user_id, toplam_saniye) in enumerate(sirali_liste):
-        user = ctx.guild.get_member(int(user_id))
+        user = interaction.guild.get_member(int(user_id))
         user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
         emoji = medal_emojis[index] if index < 10 else f"{index+1}."
         
@@ -325,7 +365,38 @@ async def mesailer(ctx):
         liste_metni += f"{emoji} {user_name} — **{saat} Saat {dakika} Dakika**\n"
 
     embed.description = liste_metni if liste_metni else "Henüz kimse mesai yapmamış."
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="claim-sıralama", description="En çok ticket claim eden yetkilileri listeler (Top 10)")
+async def claim_siralama(interaction: discord.Interaction):
+    if not os.path.exists(DB_CLAIM):
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir claim verisi bulunmuyor!", ephemeral=True)
+        return
+
+    try:
+        with open(DB_CLAIM, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except:
+        data = {}
+
+    if not data:
+        await interaction.response.send_message("❌ Henüz kaydedilmiş bir claim verisi bulunmuyor!", ephemeral=True)
+        return
+
+    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
+    embed = discord.Embed(title="🏆 Türkiye RolePlay - Top 10 Claim Sıralaması", color=discord.Color.blue())
+    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    
+    liste_metni = ""
+    for index, (user_id, sayi) in enumerate(sirali_liste):
+        user = interaction.guild.get_member(int(user_id))
+        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
+        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
+        
+        liste_metni += f"{emoji} {user_name} — **{sayi} Claim**\n"
+
+    embed.description = liste_metni if liste_metni else "Henüz kimse ticket claim etmemiş."
+    await interaction.response.send_message(embed=embed)
 
 @tasks.loop(minutes=1)
 async def mesai_kontrol_dongusu():
@@ -349,6 +420,11 @@ async def mesai_kontrol_dongusu():
 async def on_ready():
     bot.add_view(TicketPersistentView())
     bot.add_view(MesaiPersistentView())
+    try:
+        await bot.tree.sync()
+        print("Slash komutları senkronize edildi!")
+    except Exception as e:
+        print(f"Slash senkronizasyon hatası: {e}")
     mesai_kontrol_dongusu.start()
     print(f"Gözlerimi açtım! {bot.user.name} olarak çevrimiçiyim.")
 
@@ -371,7 +447,6 @@ async def on_message(message):
         if message.channel.id == mesai["kanal_id"] and message.attachments:
             attachment = message.attachments[0]
             
-            # Karanlık ekran/renk filtresi kaldırıldı. Sadece resim atılması yeterli kabul ediliyor.
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 if mesai["durum"] == "bekliyor":
                     mesai["durum"] = "aktif"
@@ -548,7 +623,10 @@ class TicketControlView(discord.ui.View):
         if self.claimed_by:
             await interaction.followup.send(f"❌ Bu talep zaten **{self.claimed_by.display_name}** tarafından alınmış!", ephemeral=True)
             return
+        
         self.claimed_by = interaction.user
+        claim_ekle(interaction.user.id, 1)
+
         button.disabled = True
         button.label = f"Claimleyen: {interaction.user.display_name}"
         button.style = discord.ButtonStyle.gray
@@ -645,34 +723,6 @@ async def ticketkur(ctx):
         color=discord.Color.blue()
     )
     await ctx.send(embed=embed, view=view)
-
-@bot.command(name="puanlar")
-async def puanlar(ctx):
-    if not os.path.exists(DB_TICKET):
-        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
-        return
-    try:
-        with open(DB_TICKET, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except:
-        data = {}
-    if not data:
-        await ctx.send("❌ Henüz kaydedilmiş bir puan bulunmuyor!")
-        return
-
-    sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    embed = discord.Embed(title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)", color=discord.Color.gold())
-    medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    
-    liste_metni = ""
-    for index, (user_id, puan) in enumerate(sirali_liste):
-        user = ctx.guild.get_member(int(user_id))
-        user_name = user.mention if user else f"Kullanıcı ID: {user_id}"
-        emoji = medal_emojis[index] if index < 10 else f"{index+1}."
-        liste_metni += f"{emoji} {user_name} — **{puan} Puan**\n"
-
-    embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
-    await ctx.send(embed=embed)
 
 if __name__ == "__main__":
     keep_alive()
