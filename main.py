@@ -8,7 +8,6 @@ from threading import Thread
 import discord
 from discord.ext import commands, tasks
 from flask import Flask
-from PIL import Image
 
 # ==========================================
 # 1. WEB SUNUCUSU (7/24 AKTİF TUTMA)
@@ -53,7 +52,7 @@ MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı 
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ (Örnek kanıt fotoğrafının linkini buraya yapıştırabilirsin)
-ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a663828&is=6a64e6a8&hm=9618b5f190cb6209e569cafe29898db4337aef77fd5eb39651f58fd6549fd1c3&" 
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a66e0e8&is=6a658f68&hm=b8e232a2d38f4322803717a583546058eba78848a343de1c9bba05f307dd3a0c&" 
 
 # Yetkililerin mesai açabileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
@@ -78,7 +77,7 @@ aktif_mesailer = {}
 def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
     if member.guild_permissions.administrator:
         return True
-    izinli_roller = ["Stajyer Admin", "Üst Yönetim"]
+    izinli_roller = ["🔰 Stajyer Admin", "Üst Yönetim"]
     for rol in member.roles:
         if rol.name in izinli_roller:
             return True
@@ -236,7 +235,7 @@ class MesaiPersistentView(discord.ui.View):
 
         channel_name = f"mesai-{interaction.user.name.lower()}"
         
-        stajyer_rolu = discord.utils.get(guild.roles, name="Stajyer Admin")
+        stajyer_rolu = discord.utils.get(guild.roles, name="🔰 Stajyer Admin")
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -262,8 +261,7 @@ class MesaiPersistentView(discord.ui.View):
         embed = discord.Embed(title="🟢 Mesai Odası", color=discord.Color.blue())
         embed.description = (
             f"Hoş geldin {interaction.user.mention}!\n\n"
-            "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya **oyun ekranını gösteren geçerli bir fotoğraf** yüklemelisin.\n"
-            "📸 Discord arayüz ekran görüntüleri kesinlikle kabul edilmez!\n"
+            "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya **oyun ekranını gösteren bir fotoğraf** yüklemelisin.\n"
             "⏳ Her **30 dakikada bir** yeni kanıt fotoğrafı atmalısın.\n\n"
             "👇 **ÖRNEK KANIT FOTOĞRAFI AŞAĞIDADIR:**"
         )
@@ -373,30 +371,8 @@ async def on_message(message):
         if message.channel.id == mesai["kanal_id"] and message.attachments:
             attachment = message.attachments[0]
             
+            # Karanlık ekran/renk filtresi kaldırıldı. Sadece resim atılması yeterli kabul ediliyor.
             if attachment.content_type and attachment.content_type.startswith('image/'):
-                try:
-                    image_bytes = await attachment.read()
-                    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                    
-                    if img.width < 800 or img.width <= img.height:
-                        await message.channel.send(f"❌ {message.author.mention} **Geçersiz Fotoğraf!** Lütfen tam ekran yatay bir oyun görüntüsü atın.")
-                        return
-
-                    small_img = img.resize((50, 50))
-                    colors = small_img.getcolors(50 * 50)
-                    colors.sort(key=lambda x: x[0], reverse=True)
-                    
-                    dominant_color = colors[0][1]
-                    r, g, b = dominant_color
-                    
-                    if abs(r - g) < 15 and abs(g - b) < 15 and r < 70:
-                        await message.channel.send(f"❌ {message.author.mention} **Geçersiz Kanıt!** Discord arayüzünün ekran görüntüsünü atamazsınız. Lütfen oyun içi görüntünüzü atın.")
-                        return
-                        
-                except Exception as e:
-                    await message.channel.send("⚠️ Fotoğraf analiz edilirken bir hata oluştu, lütfen tekrar deneyin.")
-                    return
-
                 if mesai["durum"] == "bekliyor":
                     mesai["durum"] = "aktif"
                     mesai["aktif_baslangic"] = time.time()
@@ -404,18 +380,17 @@ async def on_message(message):
                     await message.channel.send("✅ **Mesainiz onaylanmıştır!** Süreniz işlemeye başladı.")
                 elif mesai["durum"] == "aktif":
                     mesai["son_foto_zamani"] = time.time()
-                    await message.channel.send("📸 Fotoğraf doğrulandı, mesainiz başarıyla devam ediyor.")
+                    await message.channel.send("📸 Fotoğraf alındı, mesainiz başarıyla devam ediyor.")
                 elif mesai["durum"] == "duraklatildi":
                     mesai["durum"] = "aktif"
                     mesai["aktif_baslangic"] = time.time()
                     mesai["son_foto_zamani"] = time.time()
-                    await message.channel.send("▶️ **Fotoğraf doğrulandı, mesainiz kaldığı yerden tekrar başladı!**")
+                    await message.channel.send("▶️ **Fotoğraf alındı, mesainiz kaldığı yerden tekrar başladı!**")
 
     await bot.process_commands(message)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Botun kendi ses durumunu veya başkalarının ses hareketlerini yanlış algılayıp kısıtlamasını önlüyoruz
     if member.bot:
         return
 
@@ -635,7 +610,7 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
             await interaction.followup.send("❌ Sadece 1 ticket açabilirsiniz!", ephemeral=True)
             return
 
-        stajyer_rolu = discord.utils.get(guild.roles, name="Stajyer Admin")
+        stajyer_rolu = discord.utils.get(guild.roles, name="🔰 Stajyer Admin")
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
