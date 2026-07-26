@@ -56,7 +56,7 @@ ROBLOX_SUNUCU_KODU = "1uhsw632"
 ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" # Butona tıklayınca gidecek linki buraya yapıştır
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ
-ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a66e0e8&is=6a658f68&hm=b8e232a2d38f4322803717a583546058eba78848a343de1c9bba05f307dd3a0c&" 
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a6789a8&is=6a663828&hm=9e925d016f79709bc604ebe9f223a4149c52f4ff3b6375945095d07456219e91&" 
 
 # Yetkililerin mesai açabileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
@@ -336,8 +336,13 @@ async def puan_siralama(interaction: discord.Interaction):
     embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="mesai-sıralama", description="En çok mesai yapan yetkilileri listeler (Top 10)")
+@bot.tree.command(name="mesai-sıralama", description="En çok mesai yapan yetkilileri listeler (Sadece Üst Yönetim)")
 async def mesai_siralama(interaction: discord.Interaction):
+    # BURASI GÜNCELLENDİ: Sadece Üst Yönetim görebilir
+    if not ust_yonetim_mi(interaction.user):
+        await interaction.response.send_message("❌ Bu sıralamayı sadece **Üst Yönetim** görebilir!", ephemeral=True)
+        return
+
     if not os.path.exists(DB_MESAI):
         await interaction.response.send_message("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!", ephemeral=True)
         return
@@ -579,7 +584,7 @@ class TicketTimeoutAgainView(discord.ui.View):
         await self.ticket_channel.send(f"🔄 **Ticket {opener_name} için yeniden açıldı!** Yetkililer tekrar işlem yapabilir.")
         new_view = TicketControlView(self.ticket_channel, self.opener)
         embed_panel = discord.Embed(title="🎫 Destek Kontrol Paneli (Yeniden Açıldı)", description="Aşağıdaki butonları kullanarak işlemleri yönetebilirsiniz.", color=discord.Color.gold())
-        await self.ticket_channel.send(embed_panel, view=new_view)
+        await self.ticket_channel.send(embed=embed_panel, view=new_view)
         try:
             await interaction.message.delete()
         except:
