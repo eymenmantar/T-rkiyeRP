@@ -387,64 +387,70 @@ async def claim_siralama(interaction: discord.Interaction):
     embed.description = liste_metni if liste_metni else "Henüz kimse ticket claim etmemiş."
     await interaction.response.send_message(embed=embed)
 
-# --- ROBLOX KULLANICI SORGULAMA KOMUTU ---
+# --- ROBLOX KULLANICI SORGULAMA KOMUTU (GÜNCELLENMİŞ) ---
 @bot.tree.command(name="roblox-kullanıcı", description="Bir Roblox kullanıcısının profil bilgilerini sorgular")
 async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str):
     await interaction.response.defer(ephemeral=False)
     
     url = "https://users.roblox.com/v1/users/search"
     params = {"keyword": kullanici_adi, "limit": 1}
+    headers = {"User-Agent": "Mozilla/5.0"}
     
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("❌ Roblox API'sine bağlanırken bir hata oluştu.", ephemeral=True)
-                return
-            data = await resp.json()
-            users = data.get("data", [])
-            if not users:
-                await interaction.followup.send(f"❌ '{kullanici_adi}' adında bir Roblox oyuncusu bulunamadı!", ephemeral=True)
-                return
-            
-            user_info = users[0]
-            user_id = user_info["id"]
-            username = user_info["name"]
-            display_name = user_info.get("displayName", username)
-            
-        # Kullanıcı detaylarını çek
-        detail_url = f"https://users.roblox.com/v1/users/{user_id}"
-        async with session.get(detail_url) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("❌ Kullanıcı detayları alınamadı.", ephemeral=True)
-                return
-            detail_data = await resp.json()
-            created_at = detail_data.get("created", "Bilinmiyor")[:10]
-            bio = detail_data.get("description", "Açıklama yok.")
-            if len(bio) > 150:
-                bio = bio[:147] + "..."
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params, headers=headers) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(f"❌ Roblox API yanıt vermedi (Kod: {resp.status}).", ephemeral=True)
+                    return
+                data = await resp.json()
+                users = data.get("data", [])
+                if not users:
+                    await interaction.followup.send(f"❌ '{kullanici_adi}' adında bir Roblox oyuncusu bulunamadı!", ephemeral=True)
+                    return
+                
+                user_info = users[0]
+                user_id = user_info["id"]
+                username = user_info["name"]
+                display_name = user_info.get("displayName", username)
+                
+            # Kullanıcı detaylarını çek
+            detail_url = f"https://users.roblox.com/v1/users/{user_id}"
+            async with session.get(detail_url, headers=headers) as resp:
+                if resp.status == 200:
+                    detail_data = await resp.json()
+                    created_at = detail_data.get("created", "Bilinmiyor")[:10]
+                    bio = detail_data.get("description", "Açıklama yok.")
+                    if len(bio) > 150:
+                        bio = bio[:147] + "..."
+                else:
+                    created_at = "Bilinmiyor"
+                    bio = "Açıklama alınamadı."
 
-        # Avatar resmini çek
-        avatar_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=420x420&format=Png&isCircular=false"
-        async with session.get(avatar_url) as resp:
-            if resp.status == 200:
-                avatar_data = await resp.json()
-                thumbnails = avatar_data.get("data", [])
-                headshot = thumbnails[0].get("imageUrl") if thumbnails else None
-            else:
-                headshot = None
+            # Avatar resmini çek
+            avatar_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=420x420&format=Png&isCircular=false"
+            async with session.get(avatar_url, headers=headers) as resp:
+                if resp.status == 200:
+                    avatar_data = await resp.json()
+                    thumbnails = avatar_data.get("data", [])
+                    headshot = thumbnails[0].get("imageUrl") if thumbnails else None
+                else:
+                    headshot = None
 
-    embed = discord.Embed(title=f"🎮 Roblox Profili: {username}", color=discord.Color.dark_magenta())
-    embed.add_field(name="👤 Kullanıcı Adı", value=username, inline=True)
-    embed.add_field(name="✨ Görünen Ad", value=display_name, inline=True)
-    embed.add_field(name="🆔 Roblox ID", value=str(user_id), inline=True)
-    embed.add_field(name="📅 Hesap Açılış Tarihi", value=created_at, inline=True)
-    embed.add_field(name="📝 Profil Açıklaması", value=bio or "Yok", inline=False)
-    
-    if headshot:
-        embed.set_thumbnail(url=headshot)
+        embed = discord.Embed(title=f"🎮 Roblox Profili: {username}", color=discord.Color.dark_magenta())
+        embed.add_field(name="👤 Kullanıcı Adı", value=username, inline=True)
+        embed.add_field(name="✨ Görünen Ad", value=display_name, inline=True)
+        embed.add_field(name="🆔 Roblox ID", value=str(user_id), inline=True)
+        embed.add_field(name="📅 Hesap Açılış Tarihi", value=created_at, inline=True)
+        embed.add_field(name="📝 Profil Açıklaması", value=bio or "Yok", inline=False)
         
-    embed.set_footer(text="Türkiye RolePlay • Roblox Entegrasyonu")
-    await interaction.followup.send(embed=embed)
+        if headshot:
+            embed.set_thumbnail(url=headshot)
+            
+        embed.set_footer(text="Türkiye RolePlay • Roblox Entegrasyonu")
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        await interaction.followup.send(f"❌ Bir hata oluştu: `{e}`", ephemeral=True)
 
 # --- SADECE ÜST YÖNETİM EKLEME / ÇIKARMA KOMUTLARI ---
 @bot.tree.command(name="puan-ekle", description="Bir yetkiliye puan ekler (Sadece Üst Yönetim)")
