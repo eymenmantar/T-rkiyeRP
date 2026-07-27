@@ -53,12 +53,11 @@ MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği giz
 
 # 📌 ROBLOX SUNUCU AYARLARI 
 ROBLOX_SUNUCU_KODU = "1uhsw632" 
-ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" # Butona tıklayınca gidecek linki buraya yapıştır
+ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" 
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ
-ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a6789a8&is=6a663828&hm=9e925d016f79709bc604ebe9f223a4149c52f4ff3b6375945095d07456219e91&" 
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a683268&is=6a66e0e8&hm=d187288503a770f4dd46b35ac1de4937b9a46bb7da128866a3815db415604da4&" 
 
-# Yetkililerin mesai açabileceği izinli kanal isimleri
 IZINLI_KANALLARI = [
     "🟢Aktif Yetkili 1", 
     "🟢Aktif Yetkili 2", 
@@ -73,7 +72,6 @@ DB_TICKET = "puanlar.json"
 DB_MESAI = "mesai_sureleri.json"
 DB_CLAIM = "claimler.json"
 
-# Hafızadaki Aktif Mesailer Sözlüğü
 aktif_mesailer = {}
 
 # ==========================================
@@ -255,16 +253,12 @@ class MesaiPersistentView(discord.ui.View):
 
         channel_name = f"mesai-{interaction.user.name.lower()}"
         
-        stajyer_rolu = discord.utils.get(guild.roles, name="🔰 Stajyer Admin")
-
+        # SADECE MESAIYI AÇAN KİŞİ VE BOT GÖREBİLİR (Stajyerlerin görme izni kaldırıldı)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, attach_files=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
         }
-
-        if stajyer_rolu:
-            overwrites[stajyer_rolu] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
         mesai_channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
         
@@ -311,6 +305,7 @@ async def mesaikur(ctx):
 # ==========================================
 # 6. SLASH SIRALAMA VE YÖNETİM KOMUTLARI
 # ==========================================
+
 @bot.tree.command(name="puan-sıralama", description="En yüksek puanlı yetkilileri listeler (Top 10)")
 async def puan_siralama(interaction: discord.Interaction):
     if not os.path.exists(DB_TICKET):
@@ -336,11 +331,10 @@ async def puan_siralama(interaction: discord.Interaction):
     embed.description = liste_metni if liste_metni else "Henüz kimse puan almamış."
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="mesai-sıralama", description="En çok mesai yapan yetkilileri listeler (Sadece Üst Yönetim)")
+@bot.tree.command(name="mesai-sıralama", description="En çok mesai yapan yetkilileri listeler (Sadece Yetkililer)")
 async def mesai_siralama(interaction: discord.Interaction):
-    # BURASI GÜNCELLENDİ: Sadece Üst Yönetim görebilir
-    if not ust_yonetim_mi(interaction.user):
-        await interaction.response.send_message("❌ Bu sıralamayı sadece **Üst Yönetim** görebilir!", ephemeral=True)
+    if not stajyer_veya_ustu_mu(interaction.user):
+        await interaction.response.send_message("❌ Bu komutu sadece **Yetkililer** kullanabilir!", ephemeral=True)
         return
 
     if not os.path.exists(DB_MESAI):
@@ -487,7 +481,6 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 📌 HERKESİN KULLANABİLECEĞİ OTOMATİK "KOD" YANITI (YETKİ KISITLAMASI YOK)
     if message.content.lower().strip() == "kod":
         embed = discord.Embed(
             description=(
@@ -498,13 +491,10 @@ async def on_message(message):
             ),
             color=discord.Color.blurple()
         )
-        
-        # Birebir aynı tasarım: Kedi emojili Türkiye RolePlay Sunucu Kodu başlığı
         embed.set_author(name="🐱 Türkiye RolePlay Sunucu Kodu")
         embed.set_footer(text="Türkiye RolePlay • İyi Roleplayler Dileriz!")
         
         view = discord.ui.View()
-        # "Hızlı Bağlan" isimli, kedi emojili buton
         button = discord.ui.Button(label="Hızlı Bağlan", style=discord.ButtonStyle.link, url=ROBLOX_HIZLI_BAGLAN_LINKI, emoji="🐱")
         view.add_item(button)
         
@@ -732,7 +722,7 @@ class TicketControlView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         if not stajyer_veya_ustu_mu(interaction.user):
-            await interaction.followup.send("❌ Bu talebi kapatmaya yetkin yok!", ephemeral=True)
+            await interaction.response.send_message("❌ Bu talebi kapatmaya yetkin yok!", ephemeral=True)
             return
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
         msg = await interaction.followup.send("⭐ Lütfen bu destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
