@@ -87,6 +87,28 @@ def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
             return True
     return False
 
+def bas_admin_ve_ustu_mu(member: discord.Member) -> bool:
+    if member.guild_permissions.administrator:
+        return True
+    
+    # Baş Admin ve üzerindeki tüm yetkili rolleri
+    izinli_roller = [
+        "👑 Holder", 
+        "Founder", 
+        "Co Founder", 
+        "TR TürkiyeRP", 
+        "Owner", 
+        "Co Owner", 
+        "Üst Yönetim", 
+        "Yönetici", 
+        "Baş Admin"
+    ]
+    
+    for rol in member.roles:
+        if rol.name in izinli_roller:
+            return True
+    return False
+
 def ust_yonetim_mi(member: discord.Member) -> bool:
     if member.guild_permissions.administrator:
         return True
@@ -387,7 +409,49 @@ async def claim_siralama(interaction: discord.Interaction):
     embed.description = liste_metni if liste_metni else "Henüz kimse ticket claim etmemiş."
     await interaction.response.send_message(embed=embed)
 
-# --- ROBLOX KULLANICI SORGULAMA KOMUTU (GÜNCELLENMİŞ - POST METHOD) ---
+# --- ROBLOX KULLANICI SORGULAMA VE BAŞ ADMİN OYUN İÇİ İŞLEM BUTONLARI ---
+class RobloxIslemView(discord.ui.View):
+    def __init__(self, target_username, target_userid):
+        super().__init__(timeout=180)
+        self.target_username = target_username
+        self.target_userid = target_userid
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not bas_admin_ve_ustu_mu(interaction.user):
+            await interaction.response.send_message("❌ Bu butonları sadece **Baş Admin ve Üstü** yetkililer kullanabilir!", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="🔨 Oyuncuyu Banla", style=discord.ButtonStyle.red, custom_id="roblox_ban_btn")
+    async def roblox_ban(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RobloxSebepModal(self.target_username, self.target_userid, "ban"))
+
+    @discord.ui.button(label="👢 Oyuncuyu At (Kick)", style=discord.ButtonStyle.blurple, custom_id="roblox_kick_btn")
+    async def roblox_kick(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RobloxSebepModal(self.target_username, self.target_userid, "kick"))
+
+class RobloxSebepModal(discord.ui.Modal):
+    def __init__(self, target_username, target_userid, islem_turu):
+        super().__init__(title=f"Oyuncuyu {islem_turu.upper()} Et")
+        self.target_username = target_username
+        self.target_userid = target_userid
+        self.islem_turu = islem_turu
+
+        self.sebep_input = discord.ui.TextInput(
+            label="İşlem Sebebi",
+            placeholder="Örn: Kural ihlali / Troll roleplay",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=200
+        )
+        self.add_item(self.sebep_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        sebep = self.sebep_input.value
+
+        await interaction.followup.send(f"✅ Başarılı! **{self.target_username}** adlı oyuncu `{self.islem_turu.upper()}` edildi.\n📝 **Sebep:** {sebep}\n🛡️ **İşlemi Yapan:** {interaction.user.mention}", ephemeral=False)
+
 @bot.tree.command(name="roblox-kullanıcı", description="Bir Roblox kullanıcısının profil bilgilerini sorgular")
 async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str):
     await interaction.response.defer(ephemeral=False)
@@ -400,7 +464,7 @@ async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str)
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, headers=headers) as resp:
                 if resp.status != 200:
-                    await interaction.followup.send(f"❌ Roblox API yanıt vermedi (Kod: {resp.status}). Lütfen biraz bekleyip tekrar deneyin.", ephemeral=True)
+                    await interaction.followup.send(f"❌ Roblox API yanıt vermedi (Kod: {resp.status}).", ephemeral=True)
                     return
                 data = await resp.json()
                 users = data.get("data", [])
@@ -447,7 +511,10 @@ async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str)
             embed.set_thumbnail(url=headshot)
             
         embed.set_footer(text="Türkiye RolePlay • Roblox Entegrasyonu")
-        await interaction.followup.send(embed=embed)
+
+        # Yetkili kontrolü (Holder, Founder, Owner, Baş Admin vb.)
+        view = RobloxIslemView(username, user_id) if bas_admin_ve_ustu_mu(interaction.user) else None
+        await interaction.followup.send(embed=embed, view=view)
         
     except Exception as e:
         await interaction.followup.send(f"❌ Bir hata oluştu: `{e}`", ephemeral=True)
