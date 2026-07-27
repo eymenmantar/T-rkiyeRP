@@ -4,6 +4,7 @@ import time
 import asyncio
 import urllib.request
 import io
+import aiohttp
 from threading import Thread
 import discord
 from discord.ext import commands, tasks
@@ -52,7 +53,7 @@ MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı 
 MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
 
 # 📌 ROBLOX SUNUCU AYARLARI 
-ROBLOX_SUNUCU_KODU = "1uhsw632" 
+ROBLOX_SUNUCU_KODU = "1uhsw632q" 
 ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" 
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ
@@ -253,7 +254,6 @@ class MesaiPersistentView(discord.ui.View):
 
         channel_name = f"mesai-{interaction.user.name.lower()}"
         
-        # SADECE MESAIYI AÇAN KİŞİ VE BOT GÖREBİLİR (Stajyerlerin görme izni kaldırıldı)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, attach_files=True),
@@ -303,7 +303,7 @@ async def mesaikur(ctx):
     await ctx.send(embed=embed, view=view)
 
 # ==========================================
-# 6. SLASH SIRALAMA VE YÖNETİM KOMUTLARI
+# 6. SLASH SIRALAMA, YÖNETİM VE ROBLOX KOMUTLARI
 # ==========================================
 
 @bot.tree.command(name="puan-sıralama", description="En yüksek puanlı yetkilileri listeler (Top 10)")
@@ -387,6 +387,66 @@ async def claim_siralama(interaction: discord.Interaction):
     embed.description = liste_metni if liste_metni else "Henüz kimse ticket claim etmemiş."
     await interaction.response.send_message(embed=embed)
 
+# --- ROBLOX KULLANICI SORGULAMA KOMUTU ---
+@bot.tree.command(name="roblox-kullanıcı", description="Bir Roblox kullanıcısının profil bilgilerini sorgular")
+async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str):
+    await interaction.response.defer(ephemeral=False)
+    
+    url = "https://users.roblox.com/v1/users/search"
+    params = {"keyword": kullanici_adi, "limit": 1}
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as resp:
+            if resp.status != 200:
+                await interaction.followup.send("❌ Roblox API'sine bağlanırken bir hata oluştu.", ephemeral=True)
+                return
+            data = await resp.json()
+            users = data.get("data", [])
+            if not users:
+                await interaction.followup.send(f"❌ '{kullanici_adi}' adında bir Roblox oyuncusu bulunamadı!", ephemeral=True)
+                return
+            
+            user_info = users[0]
+            user_id = user_info["id"]
+            username = user_info["name"]
+            display_name = user_info.get("displayName", username)
+            
+        # Kullanıcı detaylarını çek
+        detail_url = f"https://users.roblox.com/v1/users/{user_id}"
+        async with session.get(detail_url) as resp:
+            if resp.status != 200:
+                await interaction.followup.send("❌ Kullanıcı detayları alınamadı.", ephemeral=True)
+                return
+            detail_data = await resp.json()
+            created_at = detail_data.get("created", "Bilinmiyor")[:10]
+            bio = detail_data.get("description", "Açıklama yok.")
+            if len(bio) > 150:
+                bio = bio[:147] + "..."
+
+        # Avatar resmini çek
+        avatar_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=420x420&format=Png&isCircular=false"
+        async with session.get(avatar_url) as resp:
+            if resp.status == 200:
+                avatar_data = await resp.json()
+                thumbnails = avatar_data.get("data", [])
+                headshot = thumbnails[0].get("imageUrl") if thumbnails else None
+            else:
+                headshot = None
+
+    embed = discord.Embed(title=f"🎮 Roblox Profili: {username}", color=discord.Color.dark_magenta())
+    embed.add_field(name="👤 Kullanıcı Adı", value=username, inline=True)
+    embed.add_field(name="✨ Görünen Ad", value=display_name, inline=True)
+    embed.add_field(name="🆔 Roblox ID", value=str(user_id), inline=True)
+    embed.add_field(name="📅 Hesap Açılış Tarihi", value=created_at, inline=True)
+    embed.add_field(name="📝 Profil Açıklaması", value=bio or "Yok", inline=False)
+    
+    if headshot:
+        embed.set_thumbnail(url=headshot)
+        
+    embed.set_footer(text="Türkiye RolePlay • Roblox Entegrasyonu")
+    await interaction.followup.send(embed=embed)
+
+# --- SADECE ÜST YÖNETİM EKLEME / ÇIKARMA KOMUTLARI ---
 @bot.tree.command(name="puan-ekle", description="Bir yetkiliye puan ekler (Sadece Üst Yönetim)")
 async def puan_ekle_cmd(interaction: discord.Interaction, kullanici: discord.Member, miktar: int):
     if not ust_yonetim_mi(interaction.user):
