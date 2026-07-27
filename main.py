@@ -48,9 +48,9 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 📌 KANAL ID VE İSİM AYARLARI
-TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı
-MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal
-MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı
+TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı ID
+MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal ID
+MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı ID
 
 # 📌 ROBLOX SUNUCU AYARLARI 
 ROBLOX_SUNUCU_KODU = "1uhsw632q" 
@@ -81,7 +81,19 @@ aktif_mesailer = {}
 def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
     if member.guild_permissions.administrator:
         return True
-    izinli_roller = ["🔰 Stajyer Admin", "Üst Yönetim"]
+    
+    izinli_roller = [
+        "🔰 Stajyer Admin", 
+        "Baş Admin", 
+        "Üst Yönetim", 
+        "Yönetici", 
+        "Co Owner", 
+        "Owner", 
+        "TR KonyaRP", 
+        "Co Founder", 
+        "Founder", 
+        "👑 Holder"
+    ]
     for rol in member.roles:
         if rol.name in izinli_roller:
             return True
@@ -91,12 +103,11 @@ def bas_admin_ve_ustu_mu(member: discord.Member) -> bool:
     if member.guild_permissions.administrator:
         return True
     
-    # Baş Admin ve üzerindeki tüm yetkili rolleri
     izinli_roller = [
         "👑 Holder", 
         "Founder", 
         "Co Founder", 
-        "TR TürkiyeRP", 
+        "TR KonyaRP", 
         "Owner", 
         "Co Owner", 
         "Üst Yönetim", 
@@ -342,7 +353,7 @@ async def puan_siralama(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Henüz kaydedilmiş bir puan bulunmuyor!", ephemeral=True)
         return
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    embed = discord.Embed(title="🏆 Türkiye RolePlay - Yetkili Puan Sıralaması (Top 10)", color=discord.Color.gold())
+    embed = discord.Embed(title="🏆 Konya RolePlay - Yetkili Puan Sıralaması (Top 10)", color=discord.Color.gold())
     medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     liste_metni = ""
     for index, (user_id, puan) in enumerate(sirali_liste):
@@ -371,7 +382,7 @@ async def mesai_siralama(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Henüz kaydedilmiş bir mesai süresi bulunmuyor!", ephemeral=True)
         return
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    embed = discord.Embed(title="🏆 Türkiye RolePlay - Top 10 Mesai Sıralaması", color=discord.Color.green())
+    embed = discord.Embed(title="🏆 Konya RolePlay - Top 10 Mesai Sıralaması", color=discord.Color.green())
     medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     liste_metni = ""
     for index, (user_id, toplam_saniye) in enumerate(sirali_liste):
@@ -398,7 +409,7 @@ async def claim_siralama(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Henüz kaydedilmiş bir claim verisi bulunmuyor!", ephemeral=True)
         return
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    embed = discord.Embed(title="🏆 Türkiye RolePlay - Top 10 Claim Sıralaması", color=discord.Color.blue())
+    embed = discord.Embed(title="🏆 Konya RolePlay - Top 10 Claim Sıralaması", color=discord.Color.blue())
     medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     liste_metni = ""
     for index, (user_id, sayi) in enumerate(sirali_liste):
@@ -510,9 +521,9 @@ async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str)
         if headshot:
             embed.set_thumbnail(url=headshot)
             
-        embed.set_footer(text="Türkiye RolePlay • Roblox Entegrasyonu")
+        embed.set_footer(text="Konya RolePlay • Roblox Entegrasyonu")
 
-        # Yetkili kontrolü (Holder, Founder, Owner, Baş Admin vb.)
+        # Yetkili kontrolü
         view = RobloxIslemView(username, user_id) if bas_admin_ve_ustu_mu(interaction.user) else None
         await interaction.followup.send(embed=embed, view=view)
         
@@ -624,8 +635,8 @@ async def on_message(message):
             ),
             color=discord.Color.blurple()
         )
-        embed.set_author(name="🐱 Türkiye RolePlay Sunucu Kodu")
-        embed.set_footer(text="Türkiye RolePlay • İyi Roleplayler Dileriz!")
+        embed.set_author(name="🐱 Konya RolePlay Sunucu Kodu")
+        embed.set_footer(text="Konya RolePlay • İyi Roleplayler Dileriz!")
         
         view = discord.ui.View()
         button = discord.ui.Button(label="Hızlı Bağlan", style=discord.ButtonStyle.link, url=ROBLOX_HIZLI_BAGLAN_LINKI, emoji="🐱")
@@ -900,8 +911,8 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
         embed.add_field(name="📝 Açıklama", value=self.description.value, inline=False)
 
         view = TicketControlView(ticket_channel, interaction.user)
-        trrp_role = discord.utils.get(guild.roles, name="TRRP")
-        ping_text = trrp_role.mention if trrp_role else "@TRRP"
+        trrp_role = discord.utils.get(guild.roles, name="KonyaRP") or discord.utils.get(guild.roles, name="TRRP")
+        ping_text = trrp_role.mention if trrp_role else "@everyone"
 
         await ticket_channel.send(content=ping_text, embed=embed, view=view)
 
@@ -909,7 +920,7 @@ class TicketModal(discord.ui.Modal, title="Destek / Şikayet Formu"):
 async def ticketkur(ctx):
     view = TicketPersistentView()
     embed = discord.Embed(
-        title="🎫 Türkiye RolePlay Destek Sistemi",
+        title="🎫 Konya RolePlay Destek Sistemi",
         description="Sunucumuzda bir sorun yaşadıysan veya şikayet bildirmek istiyorsan aşağıdaki **Destek Talebi Aç** butonuna tıklayarak formu doldurabilirsin.",
         color=discord.Color.blue()
     )
