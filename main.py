@@ -387,24 +387,24 @@ async def claim_siralama(interaction: discord.Interaction):
     embed.description = liste_metni if liste_metni else "Henüz kimse ticket claim etmemiş."
     await interaction.response.send_message(embed=embed)
 
-# --- ROBLOX KULLANICI SORGULAMA KOMUTU (GÜNCELLENMİŞ) ---
+# --- ROBLOX KULLANICI SORGULAMA KOMUTU (GÜNCELLENMİŞ - POST METHOD) ---
 @bot.tree.command(name="roblox-kullanıcı", description="Bir Roblox kullanıcısının profil bilgilerini sorgular")
 async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str):
     await interaction.response.defer(ephemeral=False)
     
-    url = "https://users.roblox.com/v1/users/search"
-    params = {"keyword": kullanici_adi, "limit": 1}
-    headers = {"User-Agent": "Mozilla/5.0"}
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = {"usernames": [kullanici_adi], "excludeBannedUsers": False}
+    headers = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=headers) as resp:
+            async with session.post(url, json=payload, headers=headers) as resp:
                 if resp.status != 200:
-                    await interaction.followup.send(f"❌ Roblox API yanıt vermedi (Kod: {resp.status}).", ephemeral=True)
+                    await interaction.followup.send(f"❌ Roblox API yanıt vermedi (Kod: {resp.status}). Lütfen biraz bekleyip tekrar deneyin.", ephemeral=True)
                     return
                 data = await resp.json()
                 users = data.get("data", [])
-                if not users:
+                if not users or not users[0]:
                     await interaction.followup.send(f"❌ '{kullanici_adi}' adında bir Roblox oyuncusu bulunamadı!", ephemeral=True)
                     return
                 
