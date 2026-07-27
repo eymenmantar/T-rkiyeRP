@@ -48,16 +48,16 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 📌 KANAL ID VE İSİM AYARLARI
-TICKET_LOG_KANAL_ID = 1530494818130591836  # Ticket log kanalı ID
-MESAI_KURULUM_KANAL_ID = 1530537310649716796 # !mesaikur komutunun atılacağı kanal ID
-MESAI_YONETIM_KANAL_ID = 1530541026966765699 # Mesai onaylarının gideceği gizli üst yönetim kanalı ID
+TICKET_LOG_KANAL_ID = 1530494818130591836  
+MESAI_KURULUM_KANAL_ID = 1530537310649716796 
+MESAI_YONETIM_KANAL_ID = 1530541026966765699 
 
 # 📌 ROBLOX SUNUCU AYARLARI 
 ROBLOX_SUNUCU_KODU = "1uhsw632q" 
 ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" 
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ
-ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a683268&is=6a66e0e8&hm=d187288503a770f4dd46b35ac1de4937b9a46bb7da128866a3815db415604da4&" 
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a68db28&is=6a6789a8&hm=c5115a81ba22b483b79e7d4824c7156fc7a2bbfc0297789029270290488a999a&" 
 
 IZINLI_KANALLARI = [
     "🟢Aktif Yetkili 1", 
@@ -68,7 +68,6 @@ IZINLI_KANALLARI = [
     "🤼pehlivanın-ofisi"
 ]
 
-# Veritabanı Dosyaları
 DB_TICKET = "puanlar.json"
 DB_MESAI = "mesai_sureleri.json"
 DB_CLAIM = "claimler.json"
@@ -488,7 +487,6 @@ async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str)
                 username = user_info["name"]
                 display_name = user_info.get("displayName", username)
                 
-            # Kullanıcı detaylarını çek
             detail_url = f"https://users.roblox.com/v1/users/{user_id}"
             async with session.get(detail_url, headers=headers) as resp:
                 if resp.status == 200:
@@ -501,7 +499,6 @@ async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str)
                     created_at = "Bilinmiyor"
                     bio = "Açıklama alınamadı."
 
-            # Avatar resmini çek
             avatar_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=420x420&format=Png&isCircular=false"
             async with session.get(avatar_url, headers=headers) as resp:
                 if resp.status == 200:
@@ -523,9 +520,12 @@ async def roblox_kullanici(interaction: discord.Interaction, kullanici_adi: str)
             
         embed.set_footer(text="Konya RolePlay • Roblox Entegrasyonu")
 
-        # Yetkili kontrolü
-        view = RobloxIslemView(username, user_id) if bas_admin_ve_ustu_mu(interaction.user) else None
-        await interaction.followup.send(embed=embed, view=view)
+        # Hatanın çözüldüğü yer: Baş admin ve üstüyse butonlu gönder, stajyerse düz gönder
+        if bas_admin_ve_ustu_mu(interaction.user):
+            view = RobloxIslemView(username, user_id)
+            await interaction.followup.send(embed=embed, view=view)
+        else:
+            await interaction.followup.send(embed=embed)
         
     except Exception as e:
         await interaction.followup.send(f"❌ Bir hata oluştu: `{e}`", ephemeral=True)
