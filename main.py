@@ -78,7 +78,6 @@ aktif_mesailer = {}
 # 3. YETKİ KONTROL FONKSİYONLARI
 # ==========================================
 def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
-    """Stajyer ve üzerindeki tüm roller komutu / panelleri kullanabilir."""
     if member.guild_permissions.administrator:
         return True
     
@@ -101,7 +100,6 @@ def stajyer_veya_ustu_mu(member: discord.Member) -> bool:
     return False
 
 def bas_admin_ve_ustu_mu(member: discord.Member) -> bool:
-    """Sadece Baş Admin ve ÜSTÜ roller ban/kick butonlarını kullanabilir."""
     if member.guild_permissions.administrator:
         return True
     
@@ -346,7 +344,7 @@ async def mesai_siralama(interaction: discord.Interaction):
     with open(DB_MESAI, "r", encoding="utf-8") as f:
         data = json.load(f)
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    embed = discord.Embed(title="🏆 Mesai Sıralaması", color=discord.Color.green())
+    embed = discord.Embed(title="🏆 Konya RolePlay - Mesai Sıralaması", color=discord.Color.green())
     liste_metni = "".join([f"{i+1}. <@{uid}> — **{s//3600} Saat {(s%3600)//60} Dakika**\n" for i, (uid, s) in enumerate(sirali_liste)])
     embed.description = liste_metni or "Veri yok."
     await interaction.response.send_message(embed=embed)
@@ -359,7 +357,7 @@ async def claim_siralama(interaction: discord.Interaction):
     with open(DB_CLAIM, "r", encoding="utf-8") as f:
         data = json.load(f)
     sirali_liste = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    embed = discord.Embed(title="🏆 Claim Sıralaması", color=discord.Color.blue())
+    embed = discord.Embed(title="🏆 Konya RolePlay - Claim Sıralaması", color=discord.Color.blue())
     liste_metni = "".join([f"{i+1}. <@{uid}> — **{c} Claim**\n" for i, (uid, c) in enumerate(sirali_liste)])
     embed.description = liste_metni or "Veri yok."
     await interaction.response.send_message(embed=embed)
@@ -486,7 +484,7 @@ async def on_voice_state_update(member, before, after):
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
-# 8. TICKET SİSTEMİ (OYUNCUNUN KAPATMA ÖZELLİĞİ EKLENDİ)
+# 8. TICKET SİSTEMİ
 # ==========================================
 class TicketPersistentView(discord.ui.View):
     def __init__(self):
@@ -509,29 +507,14 @@ class FinalCloseView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-class TicketTimeoutAgainView(discord.ui.View):
-    def __init__(self, ticket_channel, opener):
-        super().__init__(timeout=None)
-        self.ticket_channel = ticket_channel
-        self.opener = opener
-
-    @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="timeout_close_ticket_direct")
-    async def timeout_close_direct(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not stajyer_veya_ustu_mu(interaction.user) and interaction.user != self.opener:
-            await interaction.response.send_message("❌ Yetkiniz yok!", ephemeral=True)
-            return
-        await interaction.response.defer()
-        await self.ticket_channel.delete()
-
 class TicketScoreModal(discord.ui.Modal, title="Puanlama"):
     feedback = discord.ui.TextInput(label="Görüşlerin (İsteğe Bağlı)", required=False, max_length=300)
 
-    def __init__(self, score, ticket_channel, claimed_by, opener):
+    def __init__(self, score, ticket_channel, claimed_by):
         super().__init__()
         self.score = score
         self.ticket_channel = ticket_channel
         self.claimed_by = claimed_by
-        self.opener = opener
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -541,28 +524,26 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama"):
         await self.ticket_channel.send("🔒 Kapatmak için aşağıdaki butonu kullanabilirsiniz:", view=FinalCloseView(self.ticket_channel))
 
 class TicketScoreView(discord.ui.View):
-    def __init__(self, ticket_channel, claimed_by, opener):
+    def __init__(self, ticket_channel, claimed_by):
         super().__init__(timeout=60)
         self.ticket_channel = ticket_channel
         self.claimed_by = claimed_by
-        self.opener = opener
 
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary)
-    async def s1(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(1, self.ticket_channel, self.claimed_by, self.opener))
+    async def s1(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(1, self.ticket_channel, self.claimed_by))
     @discord.ui.button(label="⭐ 2", style=discord.ButtonStyle.secondary)
-    async def s2(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(2, self.ticket_channel, self.claimed_by, self.opener))
+    async def s2(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(2, self.ticket_channel, self.claimed_by))
     @discord.ui.button(label="⭐ 3", style=discord.ButtonStyle.secondary)
-    async def s3(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(3, self.ticket_channel, self.claimed_by, self.opener))
+    async def s3(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(3, self.ticket_channel, self.claimed_by))
     @discord.ui.button(label="⭐ 4", style=discord.ButtonStyle.secondary)
-    async def s4(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(4, self.ticket_channel, self.claimed_by, self.opener))
+    async def s4(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(4, self.ticket_channel, self.claimed_by))
     @discord.ui.button(label="⭐ 5", style=discord.ButtonStyle.secondary)
-    async def s5(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(5, self.ticket_channel, self.claimed_by, self.opener))
+    async def s5(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(5, self.ticket_channel, self.claimed_by))
 
 class TicketControlView(discord.ui.View):
-    def __init__(self, ticket_channel, opener):
+    def __init__(self, ticket_channel):
         super().__init__(timeout=None)
         self.ticket_channel = ticket_channel
-        self.opener = opener
         self.claimed_by = None
 
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
@@ -580,12 +561,10 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 📌 BURADA GÜNCELLEME YAPILDI: Yetkili VEYA Ticket'ı Açan Oyuncu Kapatabilir!
-        if not stajyer_veya_ustu_mu(interaction.user) and interaction.user != self.opener:
-            await interaction.response.send_message("❌ Bu talebi kapatmaya yetkiniz yok!", ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.response.send_message("❌ Yetkiniz yok!", ephemeral=True)
             return
-        
-        score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
+        score_view = TicketScoreView(self.ticket_channel, self.claimed_by)
         await interaction.response.send_message("⭐ Lütfen destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
 
 class TicketModal(discord.ui.Modal, title="Destek Talebi"):
@@ -610,11 +589,17 @@ class TicketModal(discord.ui.Modal, title="Destek Talebi"):
         embed.add_field(name="Açan", value=interaction.user.mention)
         embed.add_field(name="Konu", value=self.description.value)
 
-        await ticket_channel.send(embed=embed, view=TicketControlView(ticket_channel, interaction.user))
+        await ticket_channel.send(embed=embed, view=TicketControlView(ticket_channel))
 
 @bot.command()
 async def ticketkur(ctx):
-    await ctx.send(embed=discord.Embed(title="🎫 Destek Sistemi", color=discord.Color.blue()), view=TicketPersistentView())
+    embed = discord.Embed(
+        title="🎫 Konya RolePlay Destek Sistemi",
+        description="Sunucumuzda herhangi bir sorun, şikayet veya soru yaşarsanız aşağıdaki **Destek Talebi Aç** butonuna tıklayarak yetkililerle özel bir kanal üzerinden iletişime geçebilirsiniz.",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="⚠️ Kurallar", value="• Gereksiz yere destek açmak yasaktır.\n• Yetkililere karşı saygılı olunmalıdır.", inline=False)
+    await ctx.send(embed=embed, view=TicketPersistentView())
 
 if __name__ == "__main__":
     keep_alive()
