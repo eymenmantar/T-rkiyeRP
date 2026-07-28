@@ -54,7 +54,7 @@ MESAI_YONETIM_KANAL_ID = 1530541026966765699
 
 # 📌 ROBLOX SUNUCU AYARLARI 
 ROBLOX_SUNUCU_KODU = "1uhsw632q" 
-ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzoss" 
+ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" 
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ
 ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a6983e8&is=6a683268&hm=fe2468453bbc6bbce39f5baad1fb060ba7fa35f44a8862f706fb4f40eb9ecd56&" 
@@ -484,7 +484,7 @@ async def on_voice_state_update(member, before, after):
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
-# 8. TICKET SİSTEMİ (KANALI GÖREBİLEN HERKES KAPATABİLİR)
+# 8. GELİŞMİŞ TICKET SİSTEMİ (Durum Butonları + Log + Herkes Kapatabilir)
 # ==========================================
 class TicketPersistentView(discord.ui.View):
     def __init__(self):
@@ -523,8 +523,8 @@ class TicketTimeoutAgainView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-class TicketScoreModal(discord.ui.Modal, title="Puanlama"):
-    feedback = discord.ui.TextInput(label="Görüşlerin (İsteğe Bağlı)", required=False, max_length=300)
+class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
+    feedback = discord.ui.TextInput(label="Görüşlerin (İsteğe Bağlı)", required=False, max_length=300, style=discord.TextStyle.paragraph)
 
     def __init__(self, score, ticket_channel, claimed_by, opener):
         super().__init__()
@@ -538,6 +538,16 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama"):
         await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** talebi **{self.score} Yıldız** ile puanladı.")
         if self.claimed_by:
             puan_duzenle(self.claimed_by.id, 1)
+
+        log_channel = interaction.guild.get_channel(TICKET_LOG_KANAL_ID)
+        if log_channel:
+            embed = discord.Embed(title="⭐ Destek Talebi Puanlandı", color=discord.Color.green(), timestamp=discord.utils.utcnow())
+            embed.add_field(name="👤 Puanlayan Oyuncu", value=self.opener.mention if self.opener else "Bilinmiyor", inline=False)
+            embed.add_field(name="🛡️ İlgilenen Yetkili", value=self.claimed_by.mention if self.claimed_by else "Claim Edilmemiş", inline=False)
+            embed.add_field(name="⭐ Verilen Puan", value=f"{self.score} Yıldız", inline=False)
+            embed.add_field(name="📝 Açıklama", value=self.feedback.value or "Açıklama yok.", inline=False)
+            await log_channel.send(embed=embed)
+
         await self.ticket_channel.send("🔒 Kapatmak için aşağıdaki butonu kullanabilirsiniz:", view=FinalCloseView(self.ticket_channel))
 
 class TicketScoreView(discord.ui.View):
@@ -546,6 +556,7 @@ class TicketScoreView(discord.ui.View):
         self.ticket_channel = ticket_channel
         self.claimed_by = claimed_by
         self.opener = opener
+        self.message = None
 
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary)
     async def s1(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(1, self.ticket_channel, self.claimed_by, self.opener))
@@ -578,9 +589,32 @@ class TicketControlView(discord.ui.View):
         await interaction.message.edit(view=self)
         await interaction.followup.send(f"🔒 Talep **{interaction.user.mention}** tarafından devralındı!")
 
+    @discord.ui.button(label="🔄 Çözülüyor", style=discord.ButtonStyle.blurple, custom_id="status_processing")
+    async def status_processing(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Yetkiniz yok!", ephemeral=True)
+            return
+        await interaction.followup.send("📌 Durum güncellendi: **Çözülüyor...**", ephemeral=False)
+
+    @discord.ui.button(label="✅ Çözüldü", style=discord.ButtonStyle.green, custom_id="status_resolved")
+    async def status_resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Yetkiniz yok!", ephemeral=True)
+            return
+        await interaction.followup.send("✅ Talep **Çözüldü** olarak işaretlendi.", ephemeral=False)
+
+    @discord.ui.button(label="❌ Çözülmedi", style=discord.ButtonStyle.gray, custom_id="status_unresolved")
+    async def status_unresolved(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        if not stajyer_veya_ustu_mu(interaction.user):
+            await interaction.followup.send("❌ Yetkiniz yok!", ephemeral=True)
+            return
+        await interaction.followup.send("⚠️ Talep henüz **Çözülmedi**.", ephemeral=False)
+
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Kanalı görebilen herkes (erişimi olanlar) kapatabilir
         perms = self.ticket_channel.permissions_for(interaction.user)
         if not perms.view_channel:
             await interaction.response.send_message("❌ Bu kanalı göremediğin için talebi kapatamazsın!", ephemeral=True)
