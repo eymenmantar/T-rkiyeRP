@@ -54,7 +54,7 @@ MESAI_YONETIM_KANAL_ID = 1530541026966765699
 
 # 📌 ROBLOX SUNUCU AYARLARI 
 ROBLOX_SUNUCU_KODU = "1uhsw632q" 
-ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzos" 
+ROBLOX_HIZLI_BAGLAN_LINKI = "https://www.roblox.com/share?v=v2&code=5ihdm3h6n4mzoss" 
 
 # 📸 ÖRNEK FOTOĞRAF LİNKİ
 ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/1530615347328057354/1530615381658570872/image.png?ex=6a6983e8&is=6a683268&hm=fe2468453bbc6bbce39f5baad1fb060ba7fa35f44a8862f706fb4f40eb9ecd56&" 
@@ -484,7 +484,7 @@ async def on_voice_state_update(member, before, after):
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
-# 8. TICKET SİSTEMİ
+# 8. TICKET SİSTEMİ (KANALI GÖREBİLEN HERKES KAPATABİLİR)
 # ==========================================
 class TicketPersistentView(discord.ui.View):
     def __init__(self):
@@ -501,8 +501,24 @@ class FinalCloseView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="final_close_ticket")
     async def final_close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not stajyer_veya_ustu_mu(interaction.user):
-            await interaction.response.send_message("❌ Yetkiniz yok!", ephemeral=True)
+        perms = self.ticket_channel.permissions_for(interaction.user)
+        if not perms.view_channel:
+            await interaction.response.send_message("❌ Bu kanalı göremediğin için kapatamazsın!", ephemeral=True)
+            return
+        await interaction.response.defer()
+        await self.ticket_channel.delete()
+
+class TicketTimeoutAgainView(discord.ui.View):
+    def __init__(self, ticket_channel, opener):
+        super().__init__(timeout=None)
+        self.ticket_channel = ticket_channel
+        self.opener = opener
+
+    @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="timeout_close_ticket_direct")
+    async def timeout_close_direct(self, interaction: discord.Interaction, button: discord.ui.Button):
+        perms = self.ticket_channel.permissions_for(interaction.user)
+        if not perms.view_channel:
+            await interaction.response.send_message("❌ Bu kanalı göremediğin için kapatamazsın!", ephemeral=True)
             return
         await interaction.response.defer()
         await self.ticket_channel.delete()
@@ -510,11 +526,12 @@ class FinalCloseView(discord.ui.View):
 class TicketScoreModal(discord.ui.Modal, title="Puanlama"):
     feedback = discord.ui.TextInput(label="Görüşlerin (İsteğe Bağlı)", required=False, max_length=300)
 
-    def __init__(self, score, ticket_channel, claimed_by):
+    def __init__(self, score, ticket_channel, claimed_by, opener):
         super().__init__()
         self.score = score
         self.ticket_channel = ticket_channel
         self.claimed_by = claimed_by
+        self.opener = opener
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -524,26 +541,28 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama"):
         await self.ticket_channel.send("🔒 Kapatmak için aşağıdaki butonu kullanabilirsiniz:", view=FinalCloseView(self.ticket_channel))
 
 class TicketScoreView(discord.ui.View):
-    def __init__(self, ticket_channel, claimed_by):
+    def __init__(self, ticket_channel, claimed_by, opener):
         super().__init__(timeout=60)
         self.ticket_channel = ticket_channel
         self.claimed_by = claimed_by
+        self.opener = opener
 
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary)
-    async def s1(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(1, self.ticket_channel, self.claimed_by))
+    async def s1(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(1, self.ticket_channel, self.claimed_by, self.opener))
     @discord.ui.button(label="⭐ 2", style=discord.ButtonStyle.secondary)
-    async def s2(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(2, self.ticket_channel, self.claimed_by))
+    async def s2(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(2, self.ticket_channel, self.claimed_by, self.opener))
     @discord.ui.button(label="⭐ 3", style=discord.ButtonStyle.secondary)
-    async def s3(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(3, self.ticket_channel, self.claimed_by))
+    async def s3(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(3, self.ticket_channel, self.claimed_by, self.opener))
     @discord.ui.button(label="⭐ 4", style=discord.ButtonStyle.secondary)
-    async def s4(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(4, self.ticket_channel, self.claimed_by))
+    async def s4(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(4, self.ticket_channel, self.claimed_by, self.opener))
     @discord.ui.button(label="⭐ 5", style=discord.ButtonStyle.secondary)
-    async def s5(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(5, self.ticket_channel, self.claimed_by))
+    async def s5(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(5, self.ticket_channel, self.claimed_by, self.opener))
 
 class TicketControlView(discord.ui.View):
-    def __init__(self, ticket_channel):
+    def __init__(self, ticket_channel, opener):
         super().__init__(timeout=None)
         self.ticket_channel = ticket_channel
+        self.opener = opener
         self.claimed_by = None
 
     @discord.ui.button(label="🙋‍♂️ Talebi Üstüme Al (Claim)", style=discord.ButtonStyle.blurple, custom_id="claim_ticket")
@@ -561,11 +580,15 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Talebi Kapat", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not stajyer_veya_ustu_mu(interaction.user):
-            await interaction.response.send_message("❌ Yetkiniz yok!", ephemeral=True)
+        # Kanalı görebilen herkes (erişimi olanlar) kapatabilir
+        perms = self.ticket_channel.permissions_for(interaction.user)
+        if not perms.view_channel:
+            await interaction.response.send_message("❌ Bu kanalı göremediğin için talebi kapatamazsın!", ephemeral=True)
             return
-        score_view = TicketScoreView(self.ticket_channel, self.claimed_by)
-        await interaction.response.send_message("⭐ Lütfen destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
+
+        score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
+        msg = await interaction.response.send_message("⭐ Lütfen destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
+        score_view.message = msg
 
 class TicketModal(discord.ui.Modal, title="Destek Talebi"):
     game_name = discord.ui.TextInput(label="Oyun İçi Adın", required=True, max_length=50)
@@ -589,7 +612,7 @@ class TicketModal(discord.ui.Modal, title="Destek Talebi"):
         embed.add_field(name="Açan", value=interaction.user.mention)
         embed.add_field(name="Konu", value=self.description.value)
 
-        await ticket_channel.send(embed=embed, view=TicketControlView(ticket_channel))
+        await ticket_channel.send(embed=embed, view=TicketControlView(ticket_channel, interaction.user))
 
 @bot.command()
 async def ticketkur(ctx):
