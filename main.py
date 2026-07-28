@@ -484,7 +484,7 @@ async def on_voice_state_update(member, before, after):
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
 # ==========================================
-# 8. GELİŞMİŞ TICKET SİSTEMİ (Durum Butonları + Log + Herkes Kapatabilir)
+# 8. GELİŞMİŞ TICKET SİSTEMİ (TAM DÜZELTİLMİŞ HALİ)
 # ==========================================
 class TicketPersistentView(discord.ui.View):
     def __init__(self):
@@ -508,21 +508,6 @@ class FinalCloseView(discord.ui.View):
         await interaction.response.defer()
         await self.ticket_channel.delete()
 
-class TicketTimeoutAgainView(discord.ui.View):
-    def __init__(self, ticket_channel, opener):
-        super().__init__(timeout=None)
-        self.ticket_channel = ticket_channel
-        self.opener = opener
-
-    @discord.ui.button(label="🔒 Ticketı Kapat", style=discord.ButtonStyle.red, custom_id="timeout_close_ticket_direct")
-    async def timeout_close_direct(self, interaction: discord.Interaction, button: discord.ui.Button):
-        perms = self.ticket_channel.permissions_for(interaction.user)
-        if not perms.view_channel:
-            await interaction.response.send_message("❌ Bu kanalı göremediğin için kapatamazsın!", ephemeral=True)
-            return
-        await interaction.response.defer()
-        await self.ticket_channel.delete()
-
 class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
     feedback = discord.ui.TextInput(label="Görüşlerin (İsteğe Bağlı)", required=False, max_length=300, style=discord.TextStyle.paragraph)
 
@@ -535,20 +520,23 @@ class TicketScoreModal(discord.ui.Modal, title="Puanlama ve Açıklama"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** talebi **{self.score} Yıldız** ile puanladı.")
+        await self.ticket_channel.send(f"⭐ **{interaction.user.mention}** destek talebini **{self.score} Yıldız** ile puanladı.")
         if self.claimed_by:
             puan_duzenle(self.claimed_by.id, 1)
 
+        # 📌 Gelişmiş Log Kanalı Gönderimi
         log_channel = interaction.guild.get_channel(TICKET_LOG_KANAL_ID)
         if log_channel:
             embed = discord.Embed(title="⭐ Destek Talebi Puanlandı", color=discord.Color.green(), timestamp=discord.utils.utcnow())
             embed.add_field(name="👤 Puanlayan Oyuncu", value=self.opener.mention if self.opener else "Bilinmiyor", inline=False)
             embed.add_field(name="🛡️ İlgilenen Yetkili", value=self.claimed_by.mention if self.claimed_by else "Claim Edilmemiş", inline=False)
-            embed.add_field(name="⭐ Verilen Puan", value=f"{self.score} Yıldız", inline=False)
-            embed.add_field(name="📝 Açıklama", value=self.feedback.value or "Açıklama yok.", inline=False)
+            embed.add_field(name="⭐ Verilen Puan", value=f"{self.score} Yıldız (Sisteme 1 Puan Eklendi)", inline=False)
+            embed.add_field(name="📝 Açıklama", value=self.feedback.value or "Açıklama belirtilmemiş.", inline=False)
+            embed.add_field(name="📌 Kanal", value=self.ticket_channel.name, inline=False)
             await log_channel.send(embed=embed)
 
-        await self.ticket_channel.send("🔒 Kapatmak için aşağıdaki butonu kullanabilirsiniz:", view=FinalCloseView(self.ticket_channel))
+        final_view = FinalCloseView(self.ticket_channel)
+        await self.ticket_channel.send("🔒 Destek talebi puanlandı. İşleminiz bittikten sonra aşağıdaki butondan kapatabilirsiniz:", view=final_view)
 
 class TicketScoreView(discord.ui.View):
     def __init__(self, ticket_channel, claimed_by, opener):
@@ -556,7 +544,6 @@ class TicketScoreView(discord.ui.View):
         self.ticket_channel = ticket_channel
         self.claimed_by = claimed_by
         self.opener = opener
-        self.message = None
 
     @discord.ui.button(label="⭐ 1", style=discord.ButtonStyle.secondary)
     async def s1(self, i: discord.Interaction, b: discord.ui.Button): await i.response.send_modal(TicketScoreModal(1, self.ticket_channel, self.claimed_by, self.opener))
@@ -621,8 +608,12 @@ class TicketControlView(discord.ui.View):
             return
 
         score_view = TicketScoreView(self.ticket_channel, self.claimed_by, self.opener)
-        msg = await interaction.response.send_message("⭐ Lütfen destek talebini 1 ile 5 arasında puanlayın:", view=score_view, ephemeral=False)
-        score_view.message = msg
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.orange()
+        embed.add_field(name="⚠️ Kapatma İşlemi", value=f"{interaction.user.mention} tarafından başlatıldı. Lütfen puanlayın:", inline=False)
+        
+        # Orijinal embed'i güncelleyerek yıldız butonlarını üstüne getirir
+        await interaction.response.edit_message(embed=embed, view=score_view)
 
 class TicketModal(discord.ui.Modal, title="Destek Talebi"):
     game_name = discord.ui.TextInput(label="Oyun İçi Adın", required=True, max_length=50)
