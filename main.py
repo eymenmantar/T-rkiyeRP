@@ -48,9 +48,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ==========================================
 # 3. KANAL ID VE ROL AYARLARI (BURALARI DOLDUR)
 # ==========================================
-MESAI_KUR_KANAL_ID = 111111111111111111      # !mesaikur yazılabilecek tek kanalın ID'si
-MESAI_YONETIM_KANAL_ID = 222222222222222222  # Onay/Red logunun gideceği kanalın ID'si
-ORNEK_FOTOGRAF_URL = "https://i.hizliresim.com/ornek_resim_linki.png" 
+MESAI_KUR_KANAL_ID = 1530537310649716796      # !mesaikur yazılabilecek tek kanalın ID'si
+MESAI_YONETIM_KANAL_ID = 1530541026966765699  # Onay/Red logunun gideceği kanalın ID'si
+ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/832194340469604407/1532047744917704714/image.png?ex=6a6b6e26&is=6a6a1ca6&hm=ed964dafa4b291b1d019d5e6989728e39d52936f1acfdf202c06c30749956abb&" 
 
 # Mesai açılabilecek ses kanalları (Sunucudaki birebir isimleri)
 IZINLI_KANALLARI = [
