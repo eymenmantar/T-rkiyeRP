@@ -15,7 +15,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Mesai Botu aktif ve çalışıyor!"
+    return "Konya RolePlay Mesai Botu aktif ve çalışıyor!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
@@ -28,7 +28,7 @@ def keep_alive():
 def self_ping():
     while True:
         try:
-            urllib.request.urlopen("https://t-rkiyerp.onrender.com") # Kendi Render linkini buraya yazabilirsin
+            urllib.request.urlopen("https://t-rkiyerp.onrender.com")
         except:
             pass
         time.sleep(240)
@@ -45,20 +45,19 @@ intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 📌 KANAL ID VE İSİM AYARLARI (Kendi ID'lerini buraya yazacaksın)
+# 📌 KANAL ID VE İSİM AYARLARI
 MESAI_YONETIM_KANAL_ID = 1530541026966765699  # Onay/Red log kanalının ID'si
 
-# 📸 ÖRNEK FOTOĞRAF LİNKİ
+# 📸 ÖRNEK FOTOĞRAF LİNKİ YERİ (İstediğin linki buraya yazabilirsin)
 ORNEK_FOTOGRAF_URL = "https://cdn.discordapp.com/attachments/832194340469604407/1532047744917704714/image.png?ex=6a6b6e26&is=6a6a1ca6&hm=ed964dafa4b291b1d019d5e6989728e39d52936f1acfdf202c06c30749956abb&" 
 
-# Mesai açılabilecek izinli ses kanalları
+# İkinci fotoğraftaki tam ses kanalı isimleri
 IZINLI_KANALLARI = [
-    "🟢Aktif Yetkili 1", 
-    "🟢Aktif Yetkili 2", 
-    "🟢Aktif Yetkili 3", 
-    "🟢Aktif Yetkili 4",
-    "🔴 │ İnaktif Yetkili",
-    "🤼pehlivanın-ofisi"
+    "Aktif Yetkili¹",
+    "Aktif Yetkili²",
+    "Aktif Yetkili³",
+    "Aktif Yetkili⁴",
+    "Aktif Yetkili⁵"
 ]
 
 DB_MESAI = "mesai_sureleri.json"
@@ -128,10 +127,20 @@ async def mesaiyi_bitir_ve_onaya_gonder(user_id, guild, sebep="buton"):
 
     yonetim_kanal = guild.get_channel(MESAI_YONETIM_KANAL_ID)
     if yonetim_kanal and kullanici:
-        embed = discord.Embed(title="⏱️ Mesai Onay Talebi", color=discord.Color.orange(), timestamp=discord.utils.utcnow())
-        embed.add_field(name="👤 Yetkili", value=kullanici.mention, inline=False)
-        embed.add_field(name="⏳ Hesaplanmış Süre", value=sure_metni, inline=False)
-        embed.add_field(name="📌 Kapanma Sebebi", value="Yetkili ses kanalı dışına çıkıldı / sesten ayrıldı." if sebep == "sesten_cikti" else "Manuel Kapatma", inline=False)
+        embed = discord.Embed(
+            title="📋 Yeni Mesai Raporu",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.description = (
+            f"**Yetkili:** {kullanici.mention} (`{kullanici.id}`)\n"
+            f"**Çalışma Süresi:** `{sure_metni}`\n"
+            f"**Bitiş Sebebi:** `{ 'İzinli ses kanalından ayrıldı' if sebep == 'sesten_cikti' else 'Kendi kapattı' }`"
+        )
+        
+        # Kullanıcının attığı son kanıt fotoğrafı logda gösterilir
+        if mesai.get("son_fotograf_url"):
+            embed.set_image(url=mesai["son_fotograf_url"])
         
         view = MesaiOnayView(user_id, toplam_saniye, mesai["kanal_id"])
         await yonetim_kanal.send(embed=embed, view=view)
@@ -153,13 +162,14 @@ class MesaiOnayView(discord.ui.View):
     async def kabul_et(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         mesai_duzenle(self.user_id, self.toplam_saniye)
-        for child in self.children:
-            child.disabled = True
+        
         embed = interaction.message.embeds[0]
         embed.color = discord.Color.green()
         embed.title = "✅ Mesai Onaylandı ve Kaydedildi"
-        embed.add_field(name="🛡️ Onaylayan", value=interaction.user.mention, inline=False)
-        await interaction.message.edit(embed=embed, view=self)
+        embed.description += f"\n\n🛡️ **Onaylayan:** {interaction.user.mention}"
+        
+        await interaction.message.edit(embed=embed, view=None)
+        
         kanal = interaction.guild.get_channel(self.kanal_id)
         if kanal:
             try:
@@ -170,13 +180,14 @@ class MesaiOnayView(discord.ui.View):
     @discord.ui.button(label="❌ Reddet", style=discord.ButtonStyle.red, custom_id="mesai_reddet")
     async def reddet(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        for child in self.children:
-            child.disabled = True
+        
         embed = interaction.message.embeds[0]
         embed.color = discord.Color.red()
         embed.title = "❌ Mesai Reddedildi"
-        embed.add_field(name="🛡️ Reddeden", value=interaction.user.mention, inline=False)
-        await interaction.message.edit(embed=embed, view=self)
+        embed.description += f"\n\n🛡️ **Reddeden:** {interaction.user.mention}"
+        
+        await interaction.message.edit(embed=embed, view=None)
+        
         kanal = interaction.guild.get_channel(self.kanal_id)
         if kanal:
             try:
@@ -219,18 +230,23 @@ class MesaiPersistentView(discord.ui.View):
             "durum": "bekliyor",
             "aktif_baslangic": 0.0,
             "toplam_saniye": 0.0,
-            "son_foto_zamani": time.time()
+            "son_foto_zamani": time.time(),
+            "son_fotograf_url": None
         }
 
         await interaction.followup.send(f"Mesai kanalınız oluşturuldu: {mesai_channel.mention}", ephemeral=True)
-        embed = discord.Embed(title="🟢 Mesai Odası", color=discord.Color.blue())
+        
+        # Örnek fotoğrafın yer aldığı mesai odası mesajı
+        embed = discord.Embed(title="🟢 Konya RolePlay - Mesai Odası", color=discord.Color.blue())
         embed.description = (
             f"Hoş geldin {interaction.user.mention}!\n\n"
             "⚠️ **DİKKAT:** Mesainin resmi olarak başlaması için buraya **oyun ekranını gösteren bir fotoğraf** yüklemelisin.\n"
             "⏳ Her **30 dakikada bir** yeni kanıt fotoğrafı atmalısın.\n\n"
             "👇 **ÖRNEK KANIT FOTOĞRAFI AŞAĞIDADIR:**"
         )
-        embed.set_image(url=ORNEK_FOTOGRAF_URL)
+        if ORNEK_FOTOGRAF_URL != "https://i.hizliresim.com/ornek_resim_linki.png":
+            embed.set_image(url=ORNEK_FOTOGRAF_URL)
+
         await mesai_channel.send(content=interaction.user.mention, embed=embed)
 
     @discord.ui.button(label="🔴 Mesai Kapat", style=discord.ButtonStyle.red, custom_id="mesai_kapat_btn")
@@ -246,15 +262,12 @@ class MesaiPersistentView(discord.ui.View):
 async def mesaikur(ctx):
     view = MesaiPersistentView()
     embed = discord.Embed(
-        title="⏱️ Yetkili Mesai Sistemi",
+        title="⏱️ Konya RolePlay - Yetkili Mesai Sistemi",
         description="Aşağıdaki butonları kullanarak mesainizi başlatabilir veya sonlandırabilirsiniz.",
         color=discord.Color.dark_grey()
     )
     await ctx.send(embed=embed, view=view)
 
-# ==========================================
-# 6. DÖNGÜLER VE OLAYLAR (EVENTS)
-# ==========================================
 @tasks.loop(minutes=1)
 async def mesai_kontrol_dongusu():
     su_an = time.time()
@@ -275,7 +288,7 @@ async def on_ready():
     await bot.tree.sync()
     if not mesai_kontrol_dongusu.is_running():
         mesai_kontrol_dongusu.start()
-    print(f"{bot.user.name} aktif ve mesai sistemi hazır!")
+    print(f"{bot.user.name} aktif ve Konya RolePlay mesai sistemi hazır!")
 
 @bot.event
 async def on_message(message):
@@ -287,6 +300,7 @@ async def on_message(message):
             mesai["durum"] = "aktif"
             mesai["aktif_baslangic"] = time.time()
             mesai["son_foto_zamani"] = time.time()
+            mesai["son_fotograf_url"] = message.attachments[0].url
             await message.channel.send("✅ **Fotoğraf alındı, mesainiz aktif!**")
     await bot.process_commands(message)
 
@@ -296,9 +310,6 @@ async def on_voice_state_update(member, before, after):
         if after.channel is None or after.channel.name not in IZINLI_KANALLARI:
             await mesaiyi_bitir_ve_onaya_gonder(member.id, member.guild, sebep="sesten_cikti")
 
-# ==========================================
-# 7. BAŞLATMA
-# ==========================================
 if __name__ == "__main__":
     keep_alive()
     Thread(target=self_ping, daemon=True).start()
